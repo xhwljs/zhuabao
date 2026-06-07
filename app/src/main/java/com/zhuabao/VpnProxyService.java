@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.net.VpnService;
 import android.os.Binder;
 import android.os.IBinder;
+import android.os.ParcelFileDescriptor;
 import androidx.core.app.NotificationCompat;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -38,7 +39,7 @@ public class VpnProxyService extends VpnService {
     }
 
     public static boolean isRunning() {
-        return false; // 由于是独立的 Service，我们通过其他方式判断
+        return false;
     }
 
     public void setMainActivity(MainActivity activity) {
@@ -117,7 +118,6 @@ public class VpnProxyService extends VpnService {
         builder.setMtu(VPN_MTU);
         builder.setBlocking(true);
 
-        // 排除本应用自己的流量，避免循环
         try {
             builder.addDisallowedApplication(getPackageName());
         } catch (Exception e) {
@@ -155,7 +155,6 @@ public class VpnProxyService extends VpnService {
         try {
             ByteBuffer buffer = ByteBuffer.wrap(packet, 0, length);
 
-            // 检查 IP 头部长度
             if (length < 20) return;
 
             int ipHeaderLength = (buffer.get(0) & 0x0F) * 4;
@@ -163,7 +162,6 @@ public class VpnProxyService extends VpnService {
 
             int protocol = buffer.get(9) & 0xFF;
 
-            // 获取源IP和目标IP
             byte[] srcIp = new byte[4];
             byte[] dstIp = new byte[4];
             buffer.position(12);
@@ -180,7 +178,7 @@ public class VpnProxyService extends VpnService {
             int srcPort = 0;
             int dstPort = 0;
 
-            if (protocol == 6 || protocol == 17) { // TCP or UDP
+            if (protocol == 6 || protocol == 17) {
                 if (length >= ipHeaderLength + 4) {
                     buffer.position(ipHeaderLength);
                     srcPort = buffer.getShort() & 0xFFFF;
@@ -189,24 +187,19 @@ public class VpnProxyService extends VpnService {
                 }
             }
 
-            // 只记录TCP和UDP的特定端口
             if (protocolName.isEmpty() || (dstPort != 80 && dstPort != 443 && dstPort != 8080 && dstPort != 8443)) {
-                // 写回数据包，继续传递
                 out.write(packet, 0, length);
                 return;
             }
 
-            // 创建日志
             String url = protocolName + " " + destIp + ":" + dstPort;
             NetworkLog log = new NetworkLog(url, protocolName);
             log.setRequestBody("From: " + sourceIp + ":" + srcPort + "\nTo: " + destIp + ":" + dstPort);
 
-            // 发送到 MainActivity
             if (mainActivity != null) {
                 mainActivity.addLog(log);
             }
 
-            // 写回数据包
             out.write(packet, 0, length);
 
         } catch (Exception e) {
