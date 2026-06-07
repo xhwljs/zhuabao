@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Android Build
 
 on:
   push:
@@ -17,19 +17,16 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Install Gradle 8.4
-      run: |
-        wget https://services.gradle.org/distributions/gradle-8.4-bin.zip
-        unzip -q gradle-8.4-bin.zip -d $HOME
-        echo "export PATH=$HOME/gradle-8.4/bin:$PATH" >> $GITHUB_ENV
-
-    - name: Build APK
-      run: |
-        $HOME/gradle-8.4/bin/gradle assembleDebug --no-daemon
+    - name: Run Gradle
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: 8.4
+        cache-disabled: true
+        arguments: assembleDebug
 
     - name: Upload APK
-      if: success()
       uses: actions/upload-artifact@v4
+      if: success()
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
