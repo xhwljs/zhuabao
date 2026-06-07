@@ -9,9 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    env:
-      GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.internal.http.connectionTimeout=120000 -Dorg.gradle.internal.http.socketTimeout=120000"
 
     steps:
     - name: Checkout code
@@ -26,10 +23,11 @@ jobs:
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
 
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
     - name: Build Debug APK
-      run: |
-        export ANDROID_HOME="/opt/android-sdk"
-        ./gradlew assembleDebug --no-daemon --no-build-cache --no-configuration-cache --warning-mode=none
+      run: ./gradlew assembleDebug --no-daemon --no-build-cache --no-configuration-cache --warning-mode=none
 
     - name: Upload APK
       if: success()
