@@ -1,8 +1,12 @@
 package com.zhuabao;
 
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.net.VpnService;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.widget.Button;
 import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
@@ -16,19 +20,40 @@ public class MainActivity extends AppCompatActivity {
     private RecyclerView recyclerView;
     private LogAdapter adapter;
     private boolean isVpnRunning = false;
+    private VpnProxyService vpnService;
 
-    public static LogAdapter staticAdapter;
+    public static MainActivity instance;
+
+    private final ServiceConnection vpnConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            VpnProxyService.LocalBinder binder = (VpnProxyService.LocalBinder) service;
+            vpnService = binder.getService();
+            vpnService.setMainActivity(MainActivity.this);
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            vpnService = null;
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        instance = this;
         initViews();
         setupRecyclerView();
         setupClickListeners();
-        
-        staticAdapter = adapter;
+
+        // 恢复 VPN 状态
+        if (VpnProxyService.isRunning()) {
+            isVpnRunning = true;
+            updateButtons();
+            bindVpnService();
+        }
     }
 
     private void initViews() {
@@ -43,9 +68,7 @@ public class MainActivity extends AppCompatActivity {
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         recyclerView.setAdapter(adapter);
 
-        adapter.setOnItemClickListener(log -> {
-            showLogDetail(log);
-        });
+        adapter.setOnItemClickListener(log -> showLogDetail(log));
     }
 
     private void showLogDetail(NetworkLog log) {
@@ -53,15 +76,15 @@ public class MainActivity extends AppCompatActivity {
         message.append("URL: ").append(log.getUrl()).append("\n\n");
         message.append("Method: ").append(log.getMethod()).append("\n\n");
         message.append("Time: ").append(log.getFormattedTime()).append("\n\n");
-        
+
         if (log.getStatusCode() > 0) {
             message.append("Status: ").append(log.getStatusCode()).append("\n\n");
         }
-        
+
         if (log.getRequestBody() != null && !log.getRequestBody().isEmpty()) {
             message.append("Request:\n").append(log.getRequestBody()).append("\n\n");
         }
-        
+
         if (log.getResponseBody() != null && !log.getResponseBody().isEmpty()) {
             message.append("Response:\n").append(log.getResponseBody());
         }
@@ -96,11 +119,20 @@ public class MainActivity extends AppCompatActivity {
             startService(vpnIntent);
             isVpnRunning = true;
             updateButtons();
+            bindVpnService();
             Toast.makeText(this, "抓包已启动", Toast.LENGTH_SHORT).show();
         }
     }
 
+    private void bindVpnService() {
+        Intent intent = new Intent(this, VpnProxyService.class);
+        bindService(intent, vpnConnection, Context.BIND_AUTO_CREATE);
+    }
+
     private void stopVpn() {
+        if (vpnService != null) {
+            vpnService.stopVpn();
+        }
         Intent vpnIntent = new Intent(this, VpnProxyService.class);
         stopService(vpnIntent);
         isVpnRunning = false;
@@ -109,13 +141,31 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void updateButtons() {
-        btnStart.setEnabled(!isVpnRunning);
-        btnStop.setEnabled(isVpnRunning);
+        runOnUiThread(() -> {
+            if (btnStart != null) btnStart.setEnabled(!isVpnRunning);
+            if (btnStop != null) btnStop.setEnabled(isVpnRunning);
+        });
     }
 
-    public static void addLog(NetworkLog log) {
-        if (staticAdapter != null) {
-            staticAdapter.addLog(log);
+    public void onVpnStopped() {
+        isVpnRunning = false;
+        runOnUiThread(this::updateButtons);
+    }
+
+    public void addLog(NetworkLog log) {
+        runOnUiThread(() -> {
+            if (adapter != null) {
+                adapter.addLog(log);
+            }
+        });
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (vpnConnection != null) {
+            unbindService(vpnConnection);
         }
+        instance = null;
     }
 }

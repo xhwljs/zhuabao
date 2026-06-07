@@ -6,20 +6,16 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.net.VpnService;
-import android.os.ParcelFileDescriptor;
+import android.os.Binder;
+import android.os.IBinder;
 import androidx.core.app.NotificationCompat;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
-import java.nio.channels.SocketChannel;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class VpnProxyService extends VpnService {
     private static final String CHANNEL_ID = "ZhuabaoVpnChannel";
@@ -30,7 +26,35 @@ public class VpnProxyService extends VpnService {
 
     private ParcelFileDescriptor vpnInterface;
     private ExecutorService executorService;
-    private volatile boolean isRunning = false;
+    private final AtomicBoolean isRunning = new AtomicBoolean(false);
+    private MainActivity mainActivity;
+
+    private final IBinder binder = new LocalBinder();
+
+    public class LocalBinder extends Binder {
+        public VpnProxyService getService() {
+            return VpnProxyService.this;
+        }
+    }
+
+    public static boolean isRunning() {
+        return false; // 由于是独立的 Service，我们通过其他方式判断
+    }
+
+    public void setMainActivity(MainActivity activity) {
+        this.mainActivity = activity;
+    }
+
+    public void stopVpn() {
+        isRunning.set(false);
+        if (vpnInterface != null) {
+            try {
+                vpnInterface.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
 
     @Override
     public void onCreate() {
@@ -41,15 +65,15 @@ public class VpnProxyService extends VpnService {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (isRunning) {
+        if (isRunning.get()) {
             return START_STICKY;
         }
 
         startForeground(NOTIFICATION_ID, createNotification());
-        
+
         try {
             establishVpn();
-            isRunning = true;
+            isRunning.set(true);
             executorService.execute(this::runVpnLoop);
         } catch (Exception e) {
             e.printStackTrace();
@@ -85,86 +109,133 @@ public class VpnProxyService extends VpnService {
 
     private void establishVpn() {
         Builder builder = new Builder();
+        builder.setSession("抓包工具");
         builder.addAddress(VPN_ADDRESS, VPN_PREFIX);
         builder.addRoute("0.0.0.0", 0);
         builder.addDnsServer("8.8.8.8");
         builder.addDnsServer("8.8.4.4");
         builder.setMtu(VPN_MTU);
-        builder.setSession("Zhuabao VPN");
+        builder.setBlocking(true);
+
+        // 排除本应用自己的流量，避免循环
+        try {
+            builder.addDisallowedApplication(getPackageName());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
         vpnInterface = builder.establish();
     }
 
     private void runVpnLoop() {
+        if (vpnInterface == null) return;
+
         FileInputStream in = new FileInputStream(vpnInterface.getFileDescriptor());
         FileOutputStream out = new FileOutputStream(vpnInterface.getFileDescriptor());
         byte[] packet = new byte[VPN_MTU];
 
-        while (isRunning) {
+        while (isRunning.get()) {
             try {
                 int bytesRead = in.read(packet);
                 if (bytesRead > 0) {
                     handlePacket(packet, bytesRead, out);
                 }
             } catch (IOException e) {
-                if (!isRunning) break;
-                e.printStackTrace();
+                if (!isRunning.get()) break;
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException ie) {
+                    break;
+                }
             }
         }
     }
 
     private void handlePacket(byte[] packet, int length, FileOutputStream out) {
-        ByteBuffer buffer = ByteBuffer.wrap(packet, 0, length);
-        
-        int ipHeaderLength = (buffer.get(0) & 0x0F) * 4;
-        int protocol = buffer.get(9) & 0xFF;
-        
-        byte[] ipBytes = new byte[4];
-        buffer.position(12);
-        buffer.get(ipBytes);
-        String sourceIp = (ipBytes[0] & 0xFF) + "." + (ipBytes[1] & 0xFF) + "." + 
-                          (ipBytes[2] & 0xFF) + "." + (ipBytes[3] & 0xFF);
-        
-        buffer.position(16);
-        buffer.get(ipBytes);
-        String destIp = (ipBytes[0] & 0xFF) + "." + (ipBytes[1] & 0xFF) + "." + 
-                        (ipBytes[2] & 0xFF) + "." + (ipBytes[3] & 0xFF);
-
-        if (protocol == 6) {
-            buffer.position(ipHeaderLength);
-            int sourcePort = buffer.getShort() & 0xFFFF;
-            int destPort = buffer.getShort() & 0xFFFF;
-            
-            String url = "http://" + destIp + ":" + destPort;
-            NetworkLog log = new NetworkLog(url, "TCP");
-            MainActivity.addLog(log);
-        } else if (protocol == 17) {
-            buffer.position(ipHeaderLength);
-            int sourcePort = buffer.getShort() & 0xFFFF;
-            int destPort = buffer.getShort() & 0xFFFF;
-            
-            String url = "http://" + destIp + ":" + destPort;
-            NetworkLog log = new NetworkLog(url, "UDP");
-            MainActivity.addLog(log);
-        }
-
         try {
+            ByteBuffer buffer = ByteBuffer.wrap(packet, 0, length);
+
+            // 检查 IP 头部长度
+            if (length < 20) return;
+
+            int ipHeaderLength = (buffer.get(0) & 0x0F) * 4;
+            if (ipHeaderLength < 20 || length < ipHeaderLength) return;
+
+            int protocol = buffer.get(9) & 0xFF;
+
+            // 获取源IP和目标IP
+            byte[] srcIp = new byte[4];
+            byte[] dstIp = new byte[4];
+            buffer.position(12);
+            buffer.get(srcIp);
+            buffer.position(16);
+            buffer.get(dstIp);
+
+            String sourceIp = (srcIp[0] & 0xFF) + "." + (srcIp[1] & 0xFF) + "." +
+                    (srcIp[2] & 0xFF) + "." + (srcIp[3] & 0xFF);
+            String destIp = (dstIp[0] & 0xFF) + "." + (dstIp[1] & 0xFF) + "." +
+                    (dstIp[2] & 0xFF) + "." + (dstIp[3] & 0xFF);
+
+            String protocolName = "";
+            int srcPort = 0;
+            int dstPort = 0;
+
+            if (protocol == 6 || protocol == 17) { // TCP or UDP
+                if (length >= ipHeaderLength + 4) {
+                    buffer.position(ipHeaderLength);
+                    srcPort = buffer.getShort() & 0xFFFF;
+                    dstPort = buffer.getShort() & 0xFFFF;
+                    protocolName = (protocol == 6) ? "TCP" : "UDP";
+                }
+            }
+
+            // 只记录TCP和UDP的特定端口
+            if (protocolName.isEmpty() || (dstPort != 80 && dstPort != 443 && dstPort != 8080 && dstPort != 8443)) {
+                // 写回数据包，继续传递
+                out.write(packet, 0, length);
+                return;
+            }
+
+            // 创建日志
+            String url = protocolName + " " + destIp + ":" + dstPort;
+            NetworkLog log = new NetworkLog(url, protocolName);
+            log.setRequestBody("From: " + sourceIp + ":" + srcPort + "\nTo: " + destIp + ":" + dstPort);
+
+            // 发送到 MainActivity
+            if (mainActivity != null) {
+                mainActivity.addLog(log);
+            }
+
+            // 写回数据包
             out.write(packet, 0, length);
-        } catch (IOException e) {
+
+        } catch (Exception e) {
             e.printStackTrace();
+            try {
+                out.write(packet, 0, length);
+            } catch (IOException ignored) {}
         }
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return binder;
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        isRunning = false;
+        isRunning.set(false);
         executorService.shutdown();
-        try {
-            if (vpnInterface != null) {
+        if (vpnInterface != null) {
+            try {
                 vpnInterface.close();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-        } catch (IOException e) {
-            e.printStackTrace();
+        }
+        if (mainActivity != null) {
+            mainActivity.onVpnStopped();
         }
     }
 }
