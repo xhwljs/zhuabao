@@ -1,21 +1,29 @@
 package com.zhuabao;
 
+import android.Manifest;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
 import android.net.VpnService;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.widget.Button;
 import android.widget.Toast;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 public class MainActivity extends AppCompatActivity {
     private static final int VPN_REQUEST_CODE = 1001;
+    private static final int NOTIFICATION_PERMISSION_CODE = 1002;
     private Button btnStart, btnStop, btnClear;
     private RecyclerView recyclerView;
     private LogAdapter adapter;
@@ -38,6 +46,15 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
+    private final ActivityResultLauncher<Intent> vpnPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() == RESULT_OK) {
+                    startVpnService();
+                } else {
+                    Toast.makeText(this, "VPN权限被拒绝", Toast.LENGTH_SHORT).show();
+                }
+            });
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -48,11 +65,25 @@ public class MainActivity extends AppCompatActivity {
         setupRecyclerView();
         setupClickListeners();
 
+        // Request notification permission on Android 13+
+        requestNotificationPermission();
+
         // 恢复 VPN 状态
         if (VpnProxyService.isRunning()) {
             isVpnRunning = true;
             updateButtons();
             bindVpnService();
+        }
+    }
+
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                        NOTIFICATION_PERMISSION_CODE);
+            }
         }
     }
 
@@ -105,23 +136,21 @@ public class MainActivity extends AppCompatActivity {
     private void startVpn() {
         Intent intent = VpnService.prepare(this);
         if (intent != null) {
-            startActivityForResult(intent, VPN_REQUEST_CODE);
+            // 需要显示 VPN 权限对话框
+            vpnPermissionLauncher.launch(intent);
         } else {
-            onActivityResult(VPN_REQUEST_CODE, RESULT_OK, null);
+            // 已经有 VPN 权限，直接启动服务
+            startVpnService();
         }
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == VPN_REQUEST_CODE && resultCode == RESULT_OK) {
-            Intent vpnIntent = new Intent(this, VpnProxyService.class);
-            startService(vpnIntent);
-            isVpnRunning = true;
-            updateButtons();
-            bindVpnService();
-            Toast.makeText(this, "抓包已启动", Toast.LENGTH_SHORT).show();
-        }
+    private void startVpnService() {
+        Intent vpnIntent = new Intent(this, VpnProxyService.class);
+        startService(vpnIntent);
+        isVpnRunning = true;
+        updateButtons();
+        bindVpnService();
+        Toast.makeText(this, "抓包已启动", Toast.LENGTH_SHORT).show();
     }
 
     private void bindVpnService() {
