@@ -7,30 +7,29 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up JDK
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: 8.4
+
+      - name: Setup JDK
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Set up Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install Gradle 8.4
-        run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.4-bin.zip -O /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d /opt
-          export PATH=/opt/gradle-8.4/bin:$PATH
-          gradle --version
 
       - name: Build Debug APK
         run: |
-          export PATH=/opt/gradle-8.4/bin:$PATH
-          gradle assembleDebug --no-daemon
+          export ANDROID_HOME="/opt/android-sdk"
+          gradle assembleDebug --no-daemon --no-build-cache --no-configuration-cache
 
       - name: Upload APK
         if: success()
