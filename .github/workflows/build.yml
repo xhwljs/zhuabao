@@ -23,11 +23,14 @@ jobs:
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+    - name: Install Gradle
+      run: |
+        apt-get update -qq
+        apt-get install -y -qq gradle
+        gradle --version
 
     - name: Build Debug APK
-      run: ./gradlew assembleDebug --no-daemon --no-build-cache --no-configuration-cache --warning-mode=none
+      run: gradle assembleDebug --no-daemon --no-build-cache --no-configuration-cache --warning-mode=none
 
     - name: Upload APK
       if: success()
