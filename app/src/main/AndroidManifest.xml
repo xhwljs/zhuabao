@@ -1,5 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.answer.revealer">
+
+    <!-- 用于启动目标应用和检测目标应用是否安装 -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <!-- 用于强制停止目标应用进程 -->
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+    <!-- 用于查看目标应用是否在运行 -->
+    <uses-permission android:name="android.permission.GET_TASKS" />
 
     <application
         android:allowBackup="false"
@@ -19,6 +30,7 @@
             </intent-filter>
         </activity>
 
+        <!-- LSPosed 模块标识 -->
         <meta-data
             android:name="xposedmodule"
             android:value="true" />

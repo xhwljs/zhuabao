@@ -71,6 +71,10 @@ public class XposedInit implements IXposedHookLoadPackage {
         targetClassLoader = lpparam.classLoader;
 
         // 记录 Application 上下文，用于弹 dialog 和 Toast
+        // 每次目标应用启动都会走到这里 —— 因此我们：
+        //   1. 记录 appContext 供后续 Hook OkHttp 使用
+        //   2. 弹一个 Toast 告知用户模块已生效（调试方便）
+        //   3. 写入 SharedPreferences 标记，供模块自身的配置界面读取
         XposedHelpers.findAndHookMethod(
                 "android.app.Application",
                 lpparam.classLoader,
@@ -80,17 +84,14 @@ public class XposedInit implements IXposedHookLoadPackage {
                     protected void afterHookedMethod(MethodHookParam param) {
                         appContext = (Context) param.thisObject;
                         try {
+                            // 写 SharedPreferences 标记（在目标应用的私有 SP 中写入）
                             SharedPreferences sp = appContext.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
-                            boolean firstTime = !sp.getBoolean(SP_KEY_ACTIVE, false);
                             sp.edit().putBoolean(SP_KEY_ACTIVE, true)
                                     .putLong(SP_KEY_LAST, System.currentTimeMillis()).commit();
-
-                            // 首次 hook 时显示 Toast 提示
-                            if (firstTime) {
-                                showModuleStartedToast(appContext);
-                            }
                         } catch (Throwable ignored) {
                         }
+                        // 弹 Toast（每次进入目标应用都弹一次，便于用户确认模块已生效）
+                        showModuleStartedToast(appContext);
                     }
                 }
         );
