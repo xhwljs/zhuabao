@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">抓包工具</string>
-    <string name="start_vpn">启动抓包</string>
-    <string name="stop_vpn">停止抓包</string>
-    <string name="clear_logs">清空日志</string>
-</resources>
