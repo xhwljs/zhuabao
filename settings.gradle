@@ -10,7 +10,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url 'https://maven.lsposed.org' }
+        maven { url 'https://jitpack.io' }
     }
 }
 
