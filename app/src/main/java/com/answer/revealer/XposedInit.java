@@ -640,7 +640,7 @@ public class XposedInit implements IXposedHookLoadPackage {
             if (!modified.equals(bodyStr)) {
                 // 尝试替换响应体
                 String contentType = extractOkHttpContentType(response);
-                Object newResp = buildOkHttpResponse(response, modified, contentType);
+                Object newResp = buildOkHttpResponse(response, modified, contentType, targetClassLoader);
                 if (newResp != null) {
                     param.setResult(newResp);
                     showDialog(urlStr, bodyStr, modified);

@@ -5,6 +5,7 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -222,7 +223,7 @@ public class MainActivity extends Activity {
     }
 
     private GradientDrawable makeButtonBg(int color, int radiusPx) {
-        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        GradientDrawable bg = new GradientDrawable();
         bg.setCornerRadius(radiusPx);
         bg.setColor(color);
         return bg;
