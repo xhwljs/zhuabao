@@ -43,7 +43,6 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static final String MODULE_PACKAGE = "com.answer.revealer";
     private static final String SP_NAME = "answer_revealer_status";
 
-    // 常见 HTTP 客户端 / 网络框架 类名
     private static final String[] HTTP_CLIENT_CLASS_NAMES = {
             "okhttp3.OkHttpClient",
             "okhttp3.RealCall",
@@ -92,7 +91,6 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static volatile Context appContext;
     private static ClassLoader targetClassLoader;
 
-    // ====== 从 ActivityThread 拿 Application Context ======
     private static Context getAppContextFromActivityThread() {
         try {
             Object activityThread = XposedHelpers.callStaticMethod(
@@ -138,19 +136,11 @@ public class XposedInit implements IXposedHookLoadPackage {
 
         targetClassLoader = lpparam.classLoader;
 
-        // 获取 Context
         Context ctxNow = getAppContextFromActivityThread();
         if (ctxNow != null) {
             appContext = ctxNow;
-            try {
-                SharedPreferences sp = ctxNow.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
-                sp.edit().putBoolean("module_active_v1", true)
-                        .putLong("last_hook_time", System.currentTimeMillis()).commit();
-            } catch (Throwable ignored) {
-            }
         }
 
-        // Hook Application.onCreate（兜底获取 Context）
         try {
             XposedHelpers.findAndHookMethod(
                     "android.app.Application", lpparam.classLoader, "onCreate",
@@ -169,10 +159,8 @@ public class XposedInit implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {
         }
 
-        // 扫描 HTTP 客户端
         scanHttpClients();
 
-        // 安装网络 Hook
         int before = hookInstalledCount.get();
 
         if (hasClass("okhttp3.OkHttpClient") || hasClass("okhttp3.Request")) {
@@ -185,64 +173,91 @@ public class XposedInit implements IXposedHookLoadPackage {
 
         int installed = hookInstalledCount.get() - before;
 
-        // 写入检测结果并弹 Toast
+        // === 关键：把状态写入 BOTH 模块自己的 SP AND 目标应用的 SP ===
+        // 这样模块 UI 无论从哪个方向读都能读到数据
         try {
             Context c = appContext != null ? appContext : getAppContextFromActivityThread();
             if (c != null) {
-                writeDetectionToModuleSP(c, installed);
-                showToastSafe("【答案模块】已加载，安装 " + installed + " 个 Hook，检测到 "
-                        + detectedClients.size() + " 个 HTTP 相关类");
+                writeStatsToSPs(c, installed);
+                // 仅弹这一个 Toast（模块加载成功）
+                postToast(c, "✓ 答案模块已加载，共安装 " + installed + " 个 Hook");
             }
-            XposedBridge.log("[答案模块] hook 安装完成，目标包=" + TARGET_PACKAGE
+            XposedBridge.log("[答案模块] hook安装完成，目标包=" + TARGET_PACKAGE
                     + "，hook数=" + installed + "，检测到HTTP类=" + detectedClients.size());
         } catch (Throwable ignored) {
             try {
-                XposedBridge.log("[答案模块] hook 安装完成（无 Context），目标包="
-                        + TARGET_PACKAGE + "，hook数=" + installed);
+                XposedBridge.log("[答案模块] hook安装完成（无Context），hook数=" + installed);
             } catch (Throwable ignored2) {
             }
         }
     }
 
-    // ====== 写入 SharedPreferences ======
-    private static void writeDetectionToModuleSP(Context ctx, int installedCount) {
+    // ========== 同时写入目标应用 SP 和 模块 SP ==========
+    private static void writeStatsToSPs(Context ctx, int installedCount) {
+        // 1. 写入目标应用自己的 SharedPreferences（模块 UI 可通过 createPackageContext 读取）
+        try {
+            SharedPreferences sp = ctx.getSharedPreferences(SP_NAME,
+                    Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
+            writeStatsToEditor(sp.edit(), installedCount);
+        } catch (Throwable ignored) {
+        }
+
+        // 2. 同时写入模块包名下的 SharedPreferences（模块 UI 也可以直接读自己的）
         try {
             Context moduleCtx = ctx.createPackageContext(MODULE_PACKAGE,
                     Context.CONTEXT_IGNORE_SECURITY | Context.CONTEXT_INCLUDE_CODE);
             SharedPreferences sp = moduleCtx.getSharedPreferences(SP_NAME,
                     Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
-            SharedPreferences.Editor editor = sp.edit();
-            if (detectedClients != null && !detectedClients.isEmpty()) {
-                StringBuilder sb = new StringBuilder();
-                for (String s : detectedClients) {
-                    sb.append(s).append("\n");
-                }
-                editor.putString("detected_clients", sb.toString());
-            }
-            editor.putInt("hook_installed_count", installedCount);
-            editor.putInt("target_hit_count", targetHitCounter.get());
-            editor.putInt("request_count", requestCounter.get());
-            editor.putLong("last_hook_time", System.currentTimeMillis());
-            editor.commit();
+            writeStatsToEditor(sp.edit(), installedCount);
         } catch (Throwable ignored) {
+        }
+    }
+
+    private static void writeStatsToEditor(SharedPreferences.Editor editor, int installedCount) {
+        if (detectedClients != null && !detectedClients.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            for (String s : detectedClients) {
+                sb.append(s).append("\n");
+            }
+            editor.putString("detected_clients", sb.toString());
+        }
+        editor.putInt("hook_installed_count", installedCount);
+        editor.putInt("target_hit_count", targetHitCounter.get());
+        editor.putInt("request_count", requestCounter.get());
+        editor.putLong("last_hook_time", System.currentTimeMillis());
+        editor.commit();
+    }
+
+    // ========== 每次拦截到目标 API 后也更新计数到两个 SP ==========
+    private static void updateHitStats() {
+        try {
+            Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
+            if (ctx == null) return;
+
+            // 写入目标应用的 SP
             try {
                 SharedPreferences sp = ctx.getSharedPreferences(SP_NAME,
                         Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
-                SharedPreferences.Editor editor = sp.edit();
-                if (detectedClients != null && !detectedClients.isEmpty()) {
-                    StringBuilder sb = new StringBuilder();
-                    for (String s : detectedClients) {
-                        sb.append(s).append("\n");
-                    }
-                    editor.putString("detected_clients", sb.toString());
-                }
-                editor.putInt("hook_installed_count", installedCount);
-                editor.putInt("target_hit_count", targetHitCounter.get());
-                editor.putInt("request_count", requestCounter.get());
-                editor.putLong("last_hook_time", System.currentTimeMillis());
-                editor.commit();
-            } catch (Throwable ignored2) {
+                sp.edit().putInt("target_hit_count", targetHitCounter.get())
+                        .putInt("request_count", requestCounter.get())
+                        .putLong("last_hook_time", System.currentTimeMillis())
+                        .commit();
+            } catch (Throwable ignored) {
             }
+
+            // 写入模块的 SP
+            try {
+                Context moduleCtx = ctx.createPackageContext(MODULE_PACKAGE,
+                        Context.CONTEXT_IGNORE_SECURITY | Context.CONTEXT_INCLUDE_CODE);
+                SharedPreferences sp = moduleCtx.getSharedPreferences(SP_NAME,
+                        Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
+                sp.edit().putInt("target_hit_count", targetHitCounter.get())
+                        .putInt("request_count", requestCounter.get())
+                        .putLong("last_hook_time", System.currentTimeMillis())
+                        .commit();
+            } catch (Throwable ignored) {
+            }
+        } catch (Throwable ignored) {
         }
     }
 
@@ -367,9 +382,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 Object request = param.args[0];
                                 Object url = XposedHelpers.callMethod(request, "url");
                                 if (url != null) {
-                                    String urlStr = url.toString();
-                                    showToastSafe("[OkHttp请求] " + urlStr.substring(0, Math.min(urlStr.length(), 60)));
-                                    writeRequestRecord("OKHTTP", urlStr);
+                                    writeRequestRecord("OKHTTP", url.toString());
                                 }
                             } catch (Throwable ignored) {
                             }
@@ -391,11 +404,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                             try {
                                 Object conn = param.thisObject;
                                 Object url = XposedHelpers.callMethod(conn, "getURL");
-                                if (url != null) {
-                                    String urlStr = url.toString();
-                                    showToastSafe("[HttpURLConnection] " + urlStr.substring(0, Math.min(urlStr.length(), 60)));
-                                    writeRequestRecord("HTTP_URL_CONN", urlStr);
-                                }
+                                if (url != null) writeRequestRecord("HTTP_URL_CONN", url.toString());
                             } catch (Throwable ignored) {
                             }
                         }
@@ -424,11 +433,12 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 while ((n = is.read(buf)) != -1) baos.write(buf, 0, n);
                                 is.close();
                                 String bodyStr = baos.toString("UTF-8");
-                                String modified = modifyAnswerBody(bodyStr);
-                                showDialog(urlStr, bodyStr, modified);
+                                String modified = modifyAnswerBodyWithStyle(bodyStr);
+                                targetHitCounter.incrementAndGet();
+                                updateHitStats();
+                                showToastSafe("✓ 已标记正确答案");
                                 param.setResult(new ByteArrayInputStream(modified.getBytes(StandardCharsets.UTF_8)));
-                            } catch (Throwable t) {
-                                showToastSafe("[HttpURLConnection处理] " + t.getMessage());
+                            } catch (Throwable ignored) {
                             }
                         }
                     }
@@ -450,7 +460,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 Object addr = param.args[0];
                                 if (addr instanceof InetSocketAddress) {
                                     InetSocketAddress isa = (InetSocketAddress) addr;
-                                    showToastSafe("[Socket] " + isa.getHostName() + ":" + isa.getPort());
                                     writeRequestRecord("SOCKET", isa.getHostName() + ":" + isa.getPort());
                                 }
                             } catch (Throwable ignored) {
@@ -472,9 +481,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                         protected void afterHookedMethod(MethodHookParam param) {
                             try {
                                 java.net.URL url = (java.net.URL) param.thisObject;
-                                String urlStr = url.toString();
-                                showToastSafe("[URL] " + urlStr.substring(0, Math.min(urlStr.length(), 60)));
-                                writeRequestRecord("URL_CONN", urlStr);
+                                writeRequestRecord("URL_CONN", url.toString());
                             } catch (Throwable ignored) {
                             }
                         }
@@ -485,12 +492,10 @@ public class XposedInit implements IXposedHookLoadPackage {
         }
     }
 
-    // ============================================================
-    // 核心修复：WebView Hook —— 拦截 getQuestion API 并修改响应
-    // ============================================================
+    // ========== WebView Hook（核心拦截） ==========
     private void hookWebViewLayer(final ClassLoader cl) {
 
-        // === 系统 WebView: shouldInterceptRequest(WebView, WebResourceRequest) ===
+        // 系统 WebView: shouldInterceptRequest(WebView, WebResourceRequest)
         try {
             XposedHelpers.findAndHookMethod("android.webkit.WebViewClient", cl, "shouldInterceptRequest",
                     "android.webkit.WebView", "android.webkit.WebResourceRequest",
@@ -505,17 +510,11 @@ public class XposedInit implements IXposedHookLoadPackage {
 
                                 writeRequestRecord("WEBVIEW_INTERCEPT", urlStr);
 
-                                // 只有 getQuestion 接口才拦截并修改响应
-                                if (!urlStr.contains(TARGET_PATH)) {
-                                    // 非目标接口，弹个短 Toast 告诉用户已拦截（调试用）
-                                    showToastSafe("[WebView] " + urlStr.substring(0, Math.min(urlStr.length(), 60)));
-                                    return;
-                                }
+                                if (!urlStr.contains(TARGET_PATH)) return;
 
                                 targetHitCounter.incrementAndGet();
-                                showToastSafe("【答案模块】拦截 getQuestion API，正在修改响应...");
+                                updateHitStats();
 
-                                // 转发请求 headers
                                 Map<String, String> reqHeaders = new HashMap<String, String>();
                                 try {
                                     Object headers = XposedHelpers.callMethod(req, "getRequestHeaders");
@@ -529,12 +528,8 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 } catch (Throwable ignored) {
                                 }
 
-                                // 用 HttpURLConnection 自己发起请求
                                 byte[] responseBytes = null;
-                                Map<String, String> respHeaders = new HashMap<String, String>();
-                                String contentType = "application/json";
                                 int statusCode = 200;
-
                                 HttpURLConnection conn = null;
                                 try {
                                     URL realUrl = new URL(urlStr);
@@ -542,23 +537,12 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     conn.setRequestMethod("GET");
                                     conn.setConnectTimeout(15000);
                                     conn.setReadTimeout(15000);
-                                    // 转发 headers（主要是 cookie/authorization 等认证信息）
                                     for (Map.Entry<String, String> e : reqHeaders.entrySet()) {
-                                        try {
-                                            conn.addRequestProperty(e.getKey(), e.getValue());
-                                        } catch (Throwable ignored) {
-                                        }
+                                        try { conn.addRequestProperty(e.getKey(), e.getValue()); } catch (Throwable ignored) {}
                                     }
                                     conn.connect();
-
                                     statusCode = conn.getResponseCode();
-                                    InputStream is;
-                                    if (statusCode >= 200 && statusCode < 300) {
-                                        is = conn.getInputStream();
-                                    } else {
-                                        is = conn.getErrorStream();
-                                    }
-                                    // 读取响应体
+                                    InputStream is = (statusCode >= 200 && statusCode < 300) ? conn.getInputStream() : conn.getErrorStream();
                                     ByteArrayOutputStream baos = new ByteArrayOutputStream();
                                     if (is != null) {
                                         byte[] buf = new byte[8192];
@@ -567,64 +551,33 @@ public class XposedInit implements IXposedHookLoadPackage {
                                         is.close();
                                     }
                                     responseBytes = baos.toByteArray();
-                                    // 提取响应 headers
-                                    Map<String, List<String>> fields = conn.getHeaderFields();
-                                    for (Map.Entry<String, List<String>> e : fields.entrySet()) {
-                                        if (e.getKey() != null && e.getValue() != null && !e.getValue().isEmpty()) {
-                                            respHeaders.put(e.getKey(), e.getValue().get(0));
-                                            if ("content-type".equalsIgnoreCase(e.getKey())) {
-                                                contentType = e.getValue().get(0);
-                                            }
-                                        }
-                                    }
                                 } catch (Throwable t) {
-                                    showToastSafe("请求失败: " + t.getMessage());
-                                    try { XposedBridge.log("[答案模块] WebView拦截请求失败: " + t.getMessage()); } catch (Throwable ignored2) {}
+                                    try { XposedBridge.log("[答案模块] WebView请求失败: " + t.getMessage()); } catch (Throwable ignored2) {}
                                 } finally {
                                     if (conn != null) try { conn.disconnect(); } catch (Throwable ignored) {}
                                 }
 
-                                if (responseBytes == null || responseBytes.length == 0) {
-                                    showToastSafe("响应体为空，放弃拦截");
-                                    return;
-                                }
+                                if (responseBytes == null || responseBytes.length == 0) return;
 
-                                // 修改 JSON 响应（标记正确答案为红色加粗）
                                 String bodyStr = new String(responseBytes, StandardCharsets.UTF_8);
                                 String modified = modifyAnswerBodyWithStyle(bodyStr);
 
                                 if (!modified.equals(bodyStr)) {
-                                    showToastSafe("【答案模块】成功标记正确答案！");
+                                    showToastSafe("✓ 已标记正确答案");
                                 }
 
-                                // 同时弹对话框显示原始/修改后的内容（调试用，用户可以看到已生效）
-                                showDialog(urlStr, bodyStr, modified);
-
-                                // 构造 WebResourceResponse 返回给 WebView
                                 byte[] modifiedBytes = modified.getBytes(StandardCharsets.UTF_8);
                                 ByteArrayInputStream finalInputStream = new ByteArrayInputStream(modifiedBytes);
-                                String finalContentType = contentType;
-                                WebResourceResponse wresp;
-                                // 尝试使用较新 API（带 encoding 和 status）
                                 try {
-                                    wresp = new WebResourceResponse("application/json", "UTF-8", finalInputStream);
-                                    try {
-                                        wresp.setStatusCodeAndReasonPhrase(statusCode, "OK");
-                                        wresp.setResponseHeaders(new HashMap<String, String>(respHeaders));
-                                    } catch (Throwable ignored) {
-                                        // 老版本不支持，忽略
-                                    }
+                                    WebResourceResponse wresp = new WebResourceResponse("application/json", "UTF-8", finalInputStream);
+                                    try { wresp.setStatusCodeAndReasonPhrase(statusCode, "OK"); } catch (Throwable ignored) {}
                                     param.setResult(wresp);
-                                    try { XposedBridge.log("[答案模块] WebView拦截返回成功，响应长度=" + modifiedBytes.length); } catch (Throwable ignored2) {}
                                 } catch (Throwable t) {
-                                    showToastSafe("构造响应失败: " + t.getMessage());
                                     try { XposedBridge.log("[答案模块] WebResourceResponse构造失败: " + t.getMessage()); } catch (Throwable ignored2) {}
                                 }
                             } catch (Throwable t) {
-                                // 出错时至少记录到 Xposed 日志
                                 try {
-                                    XposedBridge.log("[答案模块] WebView shouldInterceptRequest 异常: "
-                                            + t.getClass().getSimpleName() + ": " + t.getMessage());
+                                    XposedBridge.log("[答案模块] WebView拦截异常: " + t.getClass().getSimpleName() + ": " + t.getMessage());
                                 } catch (Throwable ignored2) {
                                 }
                             }
@@ -633,10 +586,10 @@ public class XposedInit implements IXposedHookLoadPackage {
             );
             hookInstalledCount.incrementAndGet();
         } catch (Throwable ignored) {
-            try { XposedBridge.log("[答案模块] 系统WebView shouldInterceptRequest hook失败: " + ignored.getMessage()); } catch (Throwable ignored2) {}
+            try { XposedBridge.log("[答案模块] WebView shouldInterceptRequest hook失败: " + ignored.getMessage()); } catch (Throwable ignored2) {}
         }
 
-        // === 系统 WebView: shouldInterceptRequest(WebView, String) 老版本 API ===
+        // 系统 WebView: shouldInterceptRequest(WebView, String) 旧版
         try {
             XposedHelpers.findAndHookMethod("android.webkit.WebViewClient", cl, "shouldInterceptRequest",
                     "android.webkit.WebView", String.class,
@@ -646,8 +599,9 @@ public class XposedInit implements IXposedHookLoadPackage {
                             try {
                                 String urlStr = (String) param.args[1];
                                 if (urlStr == null || !urlStr.contains(TARGET_PATH)) return;
+
                                 targetHitCounter.incrementAndGet();
-                                showToastSafe("【答案模块】拦截 getQuestion API(旧API)，正在修改响应...");
+                                updateHitStats();
 
                                 byte[] responseBytes = null;
                                 int statusCode = 200;
@@ -670,7 +624,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     }
                                     responseBytes = baos.toByteArray();
                                 } catch (Throwable t) {
-                                    showToastSafe("请求失败: " + t.getMessage());
+                                    try { XposedBridge.log("[答案模块] WebView旧版请求失败: " + t.getMessage()); } catch (Throwable ignored2) {}
                                 } finally {
                                     if (conn != null) try { conn.disconnect(); } catch (Throwable ignored) {}
                                 }
@@ -679,7 +633,7 @@ public class XposedInit implements IXposedHookLoadPackage {
 
                                 String bodyStr = new String(responseBytes, StandardCharsets.UTF_8);
                                 String modified = modifyAnswerBodyWithStyle(bodyStr);
-                                showDialog(urlStr, bodyStr, modified);
+                                if (!modified.equals(bodyStr)) showToastSafe("✓ 已标记正确答案");
 
                                 byte[] modifiedBytes = modified.getBytes(StandardCharsets.UTF_8);
                                 WebResourceResponse wresp = new WebResourceResponse("application/json", "UTF-8",
@@ -687,9 +641,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 try { wresp.setStatusCodeAndReasonPhrase(statusCode, "OK"); } catch (Throwable ignored) {}
                                 param.setResult(wresp);
                             } catch (Throwable t) {
-                                try {
-                                    XposedBridge.log("[答案模块] WebView shouldInterceptRequest旧版异常: " + t.getMessage());
-                                } catch (Throwable ignored2) {}
+                                try { XposedBridge.log("[答案模块] WebView旧版拦截异常: " + t.getMessage()); } catch (Throwable ignored2) {}
                             }
                         }
                     }
@@ -698,7 +650,7 @@ public class XposedInit implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {
         }
 
-        // === 系统 WebView: 老版本 loadUrl 仅记录 ===
+        // 系统 WebView: loadUrl 仅记录
         try {
             XposedHelpers.findAndHookMethod("android.webkit.WebView", cl, "loadUrl",
                     String.class,
@@ -707,9 +659,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                         protected void beforeHookedMethod(MethodHookParam param) {
                             try {
                                 String url = (String) param.args[0];
-                                if (url != null) {
-                                    writeRequestRecord("WEBVIEW", url);
-                                }
+                                if (url != null) writeRequestRecord("WEBVIEW", url);
                             } catch (Throwable ignored) {
                             }
                         }
@@ -719,7 +669,7 @@ public class XposedInit implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {
         }
 
-        // === 系统 WebView: onPageFinished 注入 JS 作为兜底 ===
+        // 系统 WebView: onPageFinished 注入 JS（兜底）
         try {
             XposedHelpers.findAndHookMethod("android.webkit.WebViewClient", cl, "onPageFinished",
                     "android.webkit.WebView", String.class,
@@ -728,31 +678,18 @@ public class XposedInit implements IXposedHookLoadPackage {
                         protected void afterHookedMethod(MethodHookParam param) {
                             try {
                                 String url = (String) param.args[1];
-                                // 仅在答题相关页面注入 JS
                                 if (url == null || (!url.contains("train") && !url.contains("exam") && !url.contains("question"))) return;
 
                                 Object webView = param.args[0];
-                                // 注入 JS：高亮正确答案（如果页面上 JSON 字段里有 isRight）
                                 String js = "javascript:(function(){try{"
-                                        + "var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);"
-                                        + "var node; while(node = walker.nextNode()){"
-                                        + "var p = node.parentNode; if(!p || !p.textContent) continue;"
+                                        + "var all=document.querySelectorAll('*');"
+                                        + "for(var i=0;i<all.length;i++){"
                                         + "try{"
-                                        + "var text = p.textContent; if(!text) continue;"
-                                        + "var idx = text.indexOf('\"isRight\":1'); var idx2 = text.indexOf('\"isRight\": 1');"
-                                        + "if(idx < 0 && idx2 < 0) continue;"
-                                        + "p.style.color='red'; p.style.fontWeight='bold';"
-                                        + "p.style.border = '2px solid red'; p.style.padding='4px';"
-                                        + "}catch(e){}"
-                                        + "}"
-                                        + "var jsonNodes = document.querySelectorAll('*');"
-                                        + "for(var i=0;i<jsonNodes.length;i++){"
-                                        + "try{"
-                                        + "var jtext = jsonNodes[i].textContent; if(!jtext || jtext.indexOf('answerOptionList')<0) continue;"
-                                        + "var obj = JSON.parse(jtext); if(obj && obj.data && obj.data.answerOptionList){"
+                                        + "var t=all[i].textContent; if(!t || t.indexOf('answerOptionList')<0) continue;"
+                                        + "var obj=JSON.parse(t); if(obj && obj.data && obj.data.answerOptionList){"
                                         + "for(var j=0;j<obj.data.answerOptionList.length;j++){"
                                         + "if(obj.data.answerOptionList[j].isRight==1){"
-                                        + "obj.data.answerOptionList[j].optionText = '【正确答案: '+obj.data.answerOptionList[j].optionText+' 】';"
+                                        + "obj.data.answerOptionList[j].optionText='【正确答案: '+obj.data.answerOptionList[j].optionText+' 】';"
                                         + "}"
                                         + "}"
                                         + "}"
@@ -761,9 +698,8 @@ public class XposedInit implements IXposedHookLoadPackage {
                                         + "}catch(e){}})();";
 
                                 XposedHelpers.callMethod(webView, "loadUrl", js);
-                                try { XposedBridge.log("[答案模块] JS 已注入到页面: " + url); } catch (Throwable ignored2) {}
                             } catch (Throwable t) {
-                                try { XposedBridge.log("[答案模块] WebView onPageFinished 注入JS异常: " + t.getMessage()); } catch (Throwable ignored2) {}
+                                try { XposedBridge.log("[答案模块] WebView JS注入异常: " + t.getMessage()); } catch (Throwable ignored2) {}
                             }
                         }
                     }
@@ -773,7 +709,7 @@ public class XposedInit implements IXposedHookLoadPackage {
             try { XposedBridge.log("[答案模块] WebView onPageFinished hook失败: " + ignored.getMessage()); } catch (Throwable ignored2) {}
         }
 
-        // === 腾讯 X5 WebView: shouldInterceptRequest ===
+        // 腾讯 X5 WebView: shouldInterceptRequest
         try {
             XposedHelpers.findAndHookMethod("com.tencent.smtt.sdk.WebViewClient", cl, "shouldInterceptRequest",
                     "com.tencent.smtt.sdk.WebView", "com.tencent.smtt.export.external.interfaces.WebResourceRequest",
@@ -789,7 +725,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 if (!urlStr.contains(TARGET_PATH)) return;
 
                                 targetHitCounter.incrementAndGet();
-                                showToastSafe("【答案模块】X5拦截 getQuestion API，正在修改响应...");
+                                updateHitStats();
 
                                 byte[] responseBytes = null;
                                 int statusCode = 200;
@@ -812,7 +748,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     }
                                     responseBytes = baos.toByteArray();
                                 } catch (Throwable t) {
-                                    showToastSafe("X5请求失败: " + t.getMessage());
+                                    try { XposedBridge.log("[答案模块] X5请求失败: " + t.getMessage()); } catch (Throwable ignored2) {}
                                 } finally {
                                     if (conn != null) try { conn.disconnect(); } catch (Throwable ignored) {}
                                 }
@@ -821,12 +757,11 @@ public class XposedInit implements IXposedHookLoadPackage {
 
                                 String bodyStr = new String(responseBytes, StandardCharsets.UTF_8);
                                 String modified = modifyAnswerBodyWithStyle(bodyStr);
-                                showDialog(urlStr, bodyStr, modified);
+                                if (!modified.equals(bodyStr)) showToastSafe("✓ 已标记正确答案");
 
                                 byte[] modifiedBytes = modified.getBytes(StandardCharsets.UTF_8);
                                 ByteArrayInputStream modifiedIs = new ByteArrayInputStream(modifiedBytes);
                                 try {
-                                    // X5 的 WebResourceResponse 可能使用腾讯自己的类
                                     Class<?> x5respCls = XposedHelpers.findClassIfExists(
                                             "com.tencent.smtt.export.external.interfaces.WebResourceResponse", cl);
                                     if (x5respCls != null) {
@@ -835,7 +770,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                                         param.setResult(x5resp);
                                     }
                                 } catch (Throwable t) {
-                                    // 退而求其次，用系统的 WebResourceResponse（如果 X5 兼容的话）
                                     try {
                                         WebResourceResponse wresp = new WebResourceResponse("application/json", "UTF-8", modifiedIs);
                                         try { wresp.setStatusCodeAndReasonPhrase(statusCode, "OK"); } catch (Throwable ignored) {}
@@ -844,14 +778,14 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     }
                                 }
                             } catch (Throwable t) {
-                                try { XposedBridge.log("[答案模块] X5 shouldInterceptRequest 异常: " + t.getMessage()); } catch (Throwable ignored2) {}
+                                try { XposedBridge.log("[答案模块] X5拦截异常: " + t.getMessage()); } catch (Throwable ignored2) {}
                             }
                         }
                     }
             );
             hookInstalledCount.incrementAndGet();
         } catch (Throwable ignored) {
-            try { XposedBridge.log("[答案模块] X5 WebView shouldInterceptRequest hook失败: " + ignored.getMessage()); } catch (Throwable ignored2) {}
+            try { XposedBridge.log("[答案模块] X5 WebView hook失败: " + ignored.getMessage()); } catch (Throwable ignored2) {}
         }
     }
 
@@ -860,19 +794,14 @@ public class XposedInit implements IXposedHookLoadPackage {
         try {
             String urlStr = extractOkHttpUrl(response);
             if (urlStr == null) return;
-
             writeRequestRecord("OKHTTP_RESP", urlStr);
-
             if (!urlStr.contains(TARGET_PATH)) return;
 
             targetHitCounter.incrementAndGet();
-            showToastSafe("【答案模块】OkHttp 命中 getQuestion API！");
+            updateHitStats();
 
             byte[] bodyBytes = extractOkHttpBodyBytes(response);
-            if (bodyBytes == null || bodyBytes.length == 0) {
-                showToastSafe("响应体为空");
-                return;
-            }
+            if (bodyBytes == null || bodyBytes.length == 0) return;
 
             String bodyStr = new String(bodyBytes, StandardCharsets.UTF_8);
             String modified = modifyAnswerBodyWithStyle(bodyStr);
@@ -882,14 +811,11 @@ public class XposedInit implements IXposedHookLoadPackage {
                 Object newResp = buildOkHttpResponse(response, modified, contentType, targetClassLoader);
                 if (newResp != null) {
                     param.setResult(newResp);
-                    showDialog(urlStr, bodyStr, modified);
-                    return;
+                    showToastSafe("✓ 已标记正确答案");
                 }
             }
-            showDialog(urlStr, bodyStr, bodyStr);
         } catch (Throwable t) {
-            showToastSafe("处理响应失败: " + t.getMessage());
-            try { XposedBridge.log("[答案模块] OkHttp 处理异常: " + t.getMessage()); } catch (Throwable ignored2) {}
+            try { XposedBridge.log("[答案模块] OkHttp处理异常: " + t.getMessage()); } catch (Throwable ignored2) {}
         }
     }
 
@@ -997,32 +923,6 @@ public class XposedInit implements IXposedHookLoadPackage {
         }
     }
 
-    // ========== 原版修改（不带 HTML 样式，保留） ==========
-    private String modifyAnswerBody(String bodyStr) {
-        try {
-            JSONObject root = new JSONObject(bodyStr);
-            if (!"success".equals(root.optString("code"))) return bodyStr;
-            JSONObject data = root.optJSONObject("data");
-            if (data == null) return bodyStr;
-            JSONArray options = data.optJSONArray("answerOptionList");
-            if (options == null || options.length() == 0) return bodyStr;
-            boolean changed = false;
-            for (int i = 0; i < options.length(); i++) {
-                JSONObject opt = options.optJSONObject(i);
-                if (opt == null) continue;
-                if (opt.optInt("isRight") == 1) {
-                    String text = opt.optString("optionText", "");
-                    opt.put("optionText", "【 " + text + " 正确答案 】");
-                    changed = true;
-                }
-            }
-            return changed ? root.toString() : bodyStr;
-        } catch (Throwable t) {
-            return bodyStr;
-        }
-    }
-
-    // ========== 新版修改（给正确答案加上 HTML 红色加粗样式，WebView 渲染会直接显示红色加粗） ==========
     private String modifyAnswerBodyWithStyle(String bodyStr) {
         try {
             JSONObject root = new JSONObject(bodyStr);
@@ -1048,33 +948,44 @@ public class XposedInit implements IXposedHookLoadPackage {
         }
     }
 
-    // ========== 写入请求记录 ==========
+    // ========== 请求记录（同时写到两个 SP） ==========
     private void writeRequestRecord(String type, String urlStr) {
         try {
             Context ctx = appContext;
             if (ctx == null) ctx = getAppContextFromActivityThread();
             if (ctx == null) return;
-            try {
-                ctx = ctx.createPackageContext(MODULE_PACKAGE,
-                        Context.CONTEXT_IGNORE_SECURITY | Context.CONTEXT_INCLUDE_CODE);
-            } catch (Throwable ignored) {
-            }
-            SharedPreferences sp = ctx.getSharedPreferences(SP_NAME,
-                    Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
+
             int counter = requestCounter.incrementAndGet();
             String key = "req_" + String.format("%05d", counter) + "_" + System.currentTimeMillis();
-            sp.edit().putString(key, type + "|" + urlStr).apply();
+            String value = type + "|" + urlStr;
+
+            // 写入目标应用的 SP
+            try {
+                SharedPreferences sp = ctx.getSharedPreferences(SP_NAME,
+                        Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
+                sp.edit().putString(key, value).commit();
+            } catch (Throwable ignored) {
+            }
+
+            // 写入模块的 SP
+            try {
+                Context moduleCtx = ctx.createPackageContext(MODULE_PACKAGE,
+                        Context.CONTEXT_IGNORE_SECURITY | Context.CONTEXT_INCLUDE_CODE);
+                SharedPreferences sp = moduleCtx.getSharedPreferences(SP_NAME,
+                        Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
+                sp.edit().putString(key, value).commit();
+            } catch (Throwable ignored) {
+            }
         } catch (Throwable ignored) {
         }
     }
 
-    // ========== Toast ==========
+    // ========== Toast（仅保留关键提示） ==========
     private void showToastSafe(final String message) {
         Context ctx = appContext;
         if (ctx == null) ctx = getAppContextFromActivityThread();
         if (ctx != null) {
             postToast(ctx, message);
-            try { XposedBridge.log("[答案模块] " + message); } catch (Throwable ignored) {}
             return;
         }
         try {
@@ -1095,96 +1006,7 @@ public class XposedInit implements IXposedHookLoadPackage {
         });
     }
 
-    // ========== 弹窗 ==========
-    private void showDialog(final String url, final String originalBody, final String modifiedBody) {
-        Context ctx = appContext;
-        if (ctx == null) ctx = getAppContextFromActivityThread();
-        if (ctx == null) return;
-
-        final Context finalCtx = ctx;
-        new Handler(Looper.getMainLooper()).post(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    int pad = dp2px(finalCtx, 16);
-                    LinearLayout container = new LinearLayout(finalCtx);
-                    container.setOrientation(LinearLayout.VERTICAL);
-                    container.setPadding(pad, pad, pad, pad);
-
-                    TextView titleReq = new TextView(finalCtx);
-                    titleReq.setText("请求 URL");
-                    titleReq.setTextSize(14);
-                    titleReq.setTextColor(0xFF1976D2);
-                    container.addView(titleReq, lpMatch());
-
-                    TextView urlView = new TextView(finalCtx);
-                    urlView.setText(url);
-                    urlView.setTextSize(11);
-                    urlView.setTextColor(0xFF212121);
-                    container.addView(urlView, lpMatch());
-
-                    TextView titleResp = new TextView(finalCtx);
-                    titleResp.setText("响应内容");
-                    titleResp.setTextSize(14);
-                    titleResp.setTextColor(0xFF1976D2);
-                    container.addView(titleResp, lpMatch());
-
-                    TextView bodyView = new TextView(finalCtx);
-                    bodyView.setText(preview(originalBody));
-                    bodyView.setTextSize(11);
-                    bodyView.setTextColor(0xFF212121);
-                    bodyView.setMovementMethod(new ScrollingMovementMethod());
-                    bodyView.setMaxHeight(dp2px(finalCtx, 300));
-                    container.addView(bodyView, lpMatch());
-
-                    if (!originalBody.equals(modifiedBody)) {
-                        TextView titleMod = new TextView(finalCtx);
-                        titleMod.setText("已修改（正确答案已标记）");
-                        titleMod.setTextSize(14);
-                        titleMod.setTextColor(0xFFc62828);
-                        container.addView(titleMod, lpMatch());
-
-                        TextView modView = new TextView(finalCtx);
-                        modView.setText(preview(modifiedBody));
-                        modView.setTextSize(11);
-                        modView.setTextColor(0xFF212121);
-                        modView.setMovementMethod(new ScrollingMovementMethod());
-                        modView.setMaxHeight(dp2px(finalCtx, 300));
-                        container.addView(modView, lpMatch());
-                    }
-
-                    ScrollView scrollView = new ScrollView(finalCtx);
-                    scrollView.addView(container);
-
-                    new AlertDialog.Builder(finalCtx)
-                            .setTitle("【题目响应已拦截】")
-                            .setView(scrollView)
-                            .setPositiveButton("关闭", null)
-                            .setCancelable(true)
-                            .show();
-                } catch (Throwable ignored) {
-                }
-            }
-        });
-    }
-
-    private static String preview(String body) {
-        if (body == null) return "";
-        if (body.length() > 4000) return body.substring(0, 4000) + "\n... (已截断)";
-        return body;
-    }
-
-    private static LinearLayout.LayoutParams lpMatch() {
-        return new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-    }
-
-    private static int dp2px(Context ctx, int dp) {
-        float density = ctx.getResources().getDisplayMetrics().density;
-        return (int) (dp * density + 0.5f);
-    }
-
+    // ========== 暴露给 UI 读取 ==========
     public static List<String> getDetectedClients() {
         return new ArrayList<String>(detectedClients);
     }
