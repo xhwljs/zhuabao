@@ -14,18 +14,27 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.URL;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
+import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
@@ -35,18 +44,63 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static final String TARGET_PATH = "/edu-core-server/app/exam/getQuestion";
     private static final String MODULE_PACKAGE = "com.answer.revealer";
     private static final String SP_NAME = "answer_revealer_status";
-    private static final String SP_KEY_ACTIVE = "module_active_v1";
-    private static final String SP_KEY_LAST = "last_intercept_time";
 
+    private static final String[] HTTP_CLIENT_CLASS_NAMES = {
+            // OkHttp
+            "okhttp3.OkHttpClient",
+            "okhttp3.RealCall",
+            "okhttp3.internal.connection.RealCall",
+            "okhttp3.Dispatcher",
+            "okhttp3.Request",
+            "okhttp3.Response",
+            "okhttp3.ResponseBody",
+            // Retrofit
+            "retrofit2.Retrofit",
+            "retrofit2.OkHttpCall",
+            "retrofit2.DefaultCallAdapterFactory",
+            // Apache HttpClient
+            "org.apache.http.impl.client.DefaultHttpClient",
+            "org.apache.http.impl.client.CloseableHttpClient",
+            "org.apache.http.client.HttpClient",
+            // Android/Java 原生
+            "java.net.HttpURLConnection",
+            "javax.net.ssl.HttpsURLConnection",
+            // Volley
+            "com.android.volley.toolbox.Volley",
+            "com.android.volley.toolbox.StringRequest",
+            "com.android.volley.toolbox.JsonObjectRequest",
+            // WebView
+            "android.webkit.WebView",
+            "android.webkit.WebViewClient",
+            // XUtils / 其他国产框架
+            "org.xutils.http.RequestParams",
+            "org.xutils.x",
+            "com.lidroid.xutils.HttpUtils",
+            "com.loopj.android.http.AsyncHttpClient",
+            "com.squareup.okhttp.OkHttpClient"
+    };
+
+    // 原子标记，确保每个 app 只执行一次初始化
+    private static final Set<String> initializedPackages =
+            Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+
+    // 检测到的 HTTP 客户端类列表
+    private static final List<String> detectedClients =
+            Collections.synchronizedList(new ArrayList<String>());
+
+    // 已处理的请求计数（用于防止重复弹窗）
+    private static final AtomicInteger requestCounter = new AtomicInteger(0);
+    private static final AtomicInteger targetHitCounter = new AtomicInteger(0);
+
+    // 共享状态
     private static volatile Context appContext;
     private static ClassLoader targetClassLoader;
-    private static volatile boolean hooksInstalled = false;
-    private static final ConcurrentHashMap<String, String> requestUrlMap = new ConcurrentHashMap<>();
 
     @Override
-    public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
-        if (lpparam == null) return;
+    public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
+        if (lpparam == null || lpparam.packageName == null) return;
 
+        // —— 处理模块自己的包 ——
         if (MODULE_PACKAGE.equals(lpparam.packageName)) {
             hookSelf(lpparam.classLoader);
             XposedHelpers.findAndHookMethod(
@@ -58,8 +112,10 @@ public class XposedInit implements IXposedHookLoadPackage {
                         protected void afterHookedMethod(MethodHookParam param) {
                             try {
                                 Context ctx = (Context) param.thisObject;
+                                appContext = ctx;
                                 SharedPreferences sp = ctx.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
-                                sp.edit().putBoolean(SP_KEY_ACTIVE, true).commit();
+                                sp.edit().putBoolean("module_active_v1", true)
+                                        .putLong("last_hook_time", System.currentTimeMillis()).commit();
                             } catch (Throwable ignored) {
                             }
                         }
@@ -68,14 +124,20 @@ public class XposedInit implements IXposedHookLoadPackage {
             return;
         }
 
-        if (!TARGET_PACKAGE.equals(lpparam.packageName)) {
-            return;
-        }
+        // —— 非目标包，跳过 ——
+        if (!TARGET_PACKAGE.equals(lpparam.packageName)) return;
 
-        if (hooksInstalled) return;
+        // —— 确保只初始化一次 ——
+        if (!initializedPackages.add(TARGET_PACKAGE)) return;
 
         targetClassLoader = lpparam.classLoader;
 
+        // ============== 先扫描目标应用的 HTTP 客户端 ==============
+        scanHttpClients();
+
+        // ============== 关键修复 ==============
+        // 1. 先 Hook Application.onCreate，拿到 Context 后立即弹 Toast
+        // 2. 用 param.thisObject 直接弹（不依赖静态 appContext）
         XposedHelpers.findAndHookMethod(
                 "android.app.Application",
                 lpparam.classLoader,
@@ -83,85 +145,140 @@ public class XposedInit implements IXposedHookLoadPackage {
                 new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        appContext = (Context) param.thisObject;
                         try {
-                            SharedPreferences sp = appContext.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
-                            sp.edit().putBoolean(SP_KEY_ACTIVE, true)
-                                    .putLong(SP_KEY_LAST, System.currentTimeMillis()).commit();
-                        } catch (Throwable ignored) {
+                            Context ctx = (Context) param.thisObject;
+                            appContext = ctx;
+                            // 记录状态：同时写入目标应用的 SP 和模块的 SP
+                            try {
+                                // 目标应用自己的 SP（用于检测模块是否激活等）
+                                SharedPreferences sp = ctx.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
+                                sp.edit().putBoolean("module_active_v1", true)
+                                        .putLong("last_hook_time", System.currentTimeMillis())
+                                        .commit();
+                                // 把请求记录也写入模块的 SP，让 UI 能读取
+                                writeDetectionToModuleSP(ctx);
+                            } catch (Throwable ignored) {
+                            }
+                            // 直接弹 Toast（这里 Context 一定存在）
+                            Toast.makeText(ctx, "【答案模块】已加载 - 包名 " + TARGET_PACKAGE,
+                                    Toast.LENGTH_LONG).show();
+                        } catch (Throwable t) {
+                            try {
+                                XposedBridge.log("[答案模块] Application.onCreate hook failed: "
+                                        + t.getClass().getSimpleName() + ": " + t.getMessage());
+                            } catch (Throwable ignored) {
+                            }
                         }
-                        showModuleStartedToast(appContext);
                     }
                 }
         );
 
-        // ========== 核心 Hook：尝试覆盖所有 HTTP 客户端 ==========
+        // ============== 网络 Hook 入口（覆盖所有可能的 HTTP 客户端）==============
+        if (hasClass("okhttp3.OkHttpClient") || hasClass("okhttp3.Request")) {
+            try {
+                hookOkHttpLayer(lpparam.classLoader);
+            } catch (Throwable ignored) {
+            }
+        }
 
-        // 1. OkHttp: okhttp3.RealCall.getResponseWithInterceptorChain()
-        hookOkHttpRealCall(lpparam.classLoader);
+        // ============== 5. Hook HttpURLConnection ==============
+        try {
+            hookHttpURLConnectionLayer(lpparam.classLoader);
+        } catch (Throwable ignored) {
+        }
 
-        // 2. OkHttp: okhttp3.internal.connection.RealCall.getResponseWithInterceptorChain()
-        hookOkHttpInternalRealCall(lpparam.classLoader);
+        // ============== 6. Hook 底层 Socket（最底层的网络访问）==============
+        try {
+            hookSocketLayer(lpparam.classLoader);
+        } catch (Throwable ignored) {
+        }
 
-        // 3. OkHttp: okhttp3.Call.execute()
-        hookOkHttpCallExecute(lpparam.classLoader);
+        // ============== 7. Hook WebView（如果用 WebView 做答题）==============
+        try {
+            hookWebViewLayer(lpparam.classLoader);
+        } catch (Throwable ignored) {
+        }
 
-        // 4. OkHttp: okhttp3.Callback.onResponse()
-        hookOkHttpCallback(lpparam.classLoader);
+        // ============== 8. Hook URL.openConnection（URL 级访问）==============
+        try {
+            hookURLOpenConnection(lpparam.classLoader);
+        } catch (Throwable ignored) {
+        }
 
-        // 5. OkHttp: okhttp3.OkHttpClient.newCall() - 记录请求 URL
-        hookOkHttpNewCall(lpparam.classLoader);
-
-        // 6. OkHttp: okhttp3.Dispatcher.enqueue() - 拦截异步请求
-        hookOkHttpDispatcherEnqueue(lpparam.classLoader);
-
-        // 7. OkHttp: okhttp3.Dispatcher.execute() - 拦截同步请求
-        hookOkHttpDispatcherExecute(lpparam.classLoader);
-
-        // 8. HttpURLConnection: getInputStream() - Android 原生 HTTP
-        hookHttpURLConnectionGetInputStream(lpparam.classLoader);
-
-        // 9. HttpURLConnection: getResponseCode() - 获取响应码
-        hookHttpURLConnectionResponseCode(lpparam.classLoader);
-
-        // 10. HttpClient: org.apache.http.HttpClient.execute()
-        hookApacheHttpClientExecute(lpparam.classLoader);
-
-        // 11. OkHttp 拦截器链: 尝试 hook Interceptor.intercept()
-        hookOkHttpInterceptor(lpparam.classLoader);
-
-        // 12. 尝试 hook 所有含 "execute" 的方法（兜底）
-        hookAllExecuteMethods(lpparam.classLoader);
-
-        hooksInstalled = true;
-
-        showToast("已安装 " + getHookCount() + " 个 Hook 入口");
+        // ============== 9. Hook 所有包含 "http" 或 "network" 的类（兜底）==============
+        // 暂时不启用这个，扫描成本太高，放到后面按需启用
     }
 
-    private int hookCount = 0;
-
-    private void recordHook(String name) {
-        hookCount++;
-        showToast("Hook 安装成功: " + name);
+    // ========== 把检测结果写入模块自己的 SharedPreferences ==========
+    private static void writeDetectionToModuleSP(Context appCtx) {
+        try {
+            Context moduleCtx = appCtx.createPackageContext(MODULE_PACKAGE,
+                    Context.CONTEXT_IGNORE_SECURITY | Context.CONTEXT_INCLUDE_CODE);
+            SharedPreferences sp = moduleCtx.getSharedPreferences(SP_NAME,
+                    Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
+            SharedPreferences.Editor editor = sp.edit();
+            // 写入 HTTP 客户端检测结果
+            if (detectedClients != null && !detectedClients.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                for (String s : detectedClients) {
+                    sb.append(s).append("\n");
+                }
+                editor.putString("detected_clients", sb.toString());
+            }
+            // 写入计数信息
+            editor.putInt("target_hit_count", targetHitCounter.get());
+            editor.putInt("request_count", requestCounter.get());
+            editor.putLong("last_hook_time", System.currentTimeMillis());
+            editor.commit();
+        } catch (Throwable ignored) {
+        }
     }
 
-    private int getHookCount() {
-        return hookCount;
+    // ========== 辅助方法：检测类是否存在 ==========
+    private static boolean hasClass(String className) {
+        try {
+            Class.forName(className, false, targetClassLoader);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
-    private void showToast(final String message) {
-        if (appContext == null) return;
-        new Handler(Looper.getMainLooper()).post(new Runnable() {
-            @Override
-            public void run() {
+    // ========== 扫描并记录 HTTP 客户端 ==========
+    private static void scanHttpClients() {
+        try {
+            String[] HTTP_CLIENT_CLASS_NAMES = {
+                    "okhttp3.OkHttpClient", "okhttp3.RealCall",
+                    "okhttp3.internal.connection.RealCall", "okhttp3.Dispatcher",
+                    "okhttp3.Request", "okhttp3.Response", "okhttp3.ResponseBody",
+                    "retrofit2.Retrofit", "retrofit2.OkHttpCall",
+                    "org.apache.http.impl.client.DefaultHttpClient",
+                    "org.apache.http.impl.client.CloseableHttpClient",
+                    "org.apache.http.client.HttpClient",
+                    "java.net.HttpURLConnection", "javax.net.ssl.HttpsURLConnection",
+                    "com.android.volley.toolbox.Volley",
+                    "com.android.volley.toolbox.StringRequest",
+                    "android.webkit.WebView", "android.webkit.WebViewClient",
+                    "org.xutils.http.RequestParams", "org.xutils.x",
+                    "com.lidroid.xutils.HttpUtils",
+                    "com.loopj.android.http.AsyncHttpClient",
+                    "com.squareup.okhttp.OkHttpClient"
+            };
+            for (String className : HTTP_CLIENT_CLASS_NAMES) {
                 try {
-                    Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show();
+                    Class<?> clazz = Class.forName(className, false, targetClassLoader);
+                    if (clazz != null) {
+                        detectedClients.add(className);
+                    }
+                } catch (ClassNotFoundException ignored) {
                 } catch (Throwable ignored) {
                 }
             }
-        });
+        } catch (Throwable ignored) {
+        }
     }
 
+    // ========== 模块自己的 Hook：让 isModuleActive 返回 true ==========
     private void hookSelf(ClassLoader cl) {
         try {
             XposedHelpers.findAndHookMethod(
@@ -179,496 +296,410 @@ public class XposedInit implements IXposedHookLoadPackage {
         }
     }
 
-    // ========== OkHttp Hook 方法 ==========
-
-    private void hookOkHttpRealCall(ClassLoader cl) {
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "okhttp3.RealCall",
-                    cl,
-                    "getResponseWithInterceptorChain",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            try {
-                                Object response = param.getResult();
-                                if (response != null) {
-                                    processResponse(response, param, cl);
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                        }
-                    }
-            );
-            recordHook("okhttp3.RealCall");
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private void hookOkHttpInternalRealCall(ClassLoader cl) {
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "okhttp3.internal.connection.RealCall",
-                    cl,
-                    "getResponseWithInterceptorChain",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            try {
-                                Object response = param.getResult();
-                                if (response != null) {
-                                    processResponse(response, param, cl);
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                        }
-                    }
-            );
-            recordHook("okhttp3.internal.connection.RealCall");
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private void hookOkHttpCallExecute(ClassLoader cl) {
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "okhttp3.Call",
-                    cl,
-                    "execute",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            try {
-                                Object response = param.getResult();
-                                if (response != null) {
-                                    processResponse(response, param, cl);
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                        }
-                    }
-            );
-            recordHook("okhttp3.Call.execute()");
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private void hookOkHttpCallback(ClassLoader cl) {
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "okhttp3.Callback",
-                    cl,
-                    "onResponse",
-                    "okhttp3.Call",
-                    "okhttp3.Response",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam param) {
-                            try {
-                                Object response = param.args[1];
-                                if (response != null) {
-                                    showToast("检测到 OkHttp 回调响应");
-                                    processResponseCallback(response, param, cl);
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                        }
-                    }
-            );
-            recordHook("okhttp3.Callback.onResponse()");
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private void hookOkHttpNewCall(ClassLoader cl) {
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "okhttp3.OkHttpClient",
-                    cl,
-                    "newCall",
-                    "okhttp3.Request",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            try {
-                                Object request = param.args[0];
-                                if (request != null) {
-                                    Object url = XposedHelpers.callMethod(request, "url");
-                                    if (url != null) {
-                                        String urlStr = url.toString();
-                                        showToast("请求: " + urlStr.substring(0, Math.min(urlStr.length(), 50)));
-                                        requestUrlMap.put(String.valueOf(request.hashCode()), urlStr);
-                                    }
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                        }
-                    }
-            );
-            recordHook("okhttp3.OkHttpClient.newCall()");
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private void hookOkHttpDispatcherEnqueue(ClassLoader cl) {
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "okhttp3.Dispatcher",
-                    cl,
-                    "enqueue",
-                    "okhttp3.Dispatcher$AsyncCall",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam param) {
-                            try {
-                                Object asyncCall = param.args[0];
-                                Object call = XposedHelpers.getObjectField(asyncCall, "call");
-                                Object request = XposedHelpers.callMethod(call, "request");
-                                Object url = XposedHelpers.callMethod(request, "url");
-                                if (url != null) {
-                                    showToast("异步请求: " + url.toString().substring(0, 50));
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                        }
-                    }
-            );
-            recordHook("okhttp3.Dispatcher.enqueue()");
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private void hookOkHttpDispatcherExecute(ClassLoader cl) {
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "okhttp3.Dispatcher",
-                    cl,
-                    "execute",
-                    "okhttp3.Call",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam param) {
-                            try {
-                                Object call = param.args[0];
-                                Object request = XposedHelpers.callMethod(call, "request");
-                                Object url = XposedHelpers.callMethod(request, "url");
-                                if (url != null) {
-                                    showToast("同步请求: " + url.toString().substring(0, 50));
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                        }
-                    }
-            );
-            recordHook("okhttp3.Dispatcher.execute()");
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private void hookOkHttpInterceptor(ClassLoader cl) {
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "okhttp3.Interceptor$Chain",
-                    cl,
-                    "proceed",
-                    "okhttp3.Request",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            try {
-                                Object response = param.getResult();
-                                if (response != null) {
-                                    processResponse(response, param, cl);
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                        }
-                    }
-            );
-            recordHook("okhttp3.Interceptor.Chain.proceed()");
-        } catch (Throwable ignored) {
-        }
-    }
-
-    // ========== HttpURLConnection Hook ==========
-
-    private void hookHttpURLConnectionGetInputStream(ClassLoader cl) {
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "java.net.HttpURLConnection",
-                    cl,
-                    "getInputStream",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            try {
-                                Object conn = param.thisObject;
-                                Object urlObj = XposedHelpers.getObjectField(conn, "url");
-                                String urlStr = urlObj != null ? urlObj.toString() : "";
-
-                                if (!urlStr.contains(TARGET_PATH)) return;
-
-                                InputStream is = (InputStream) param.getResult();
-                                if (is == null) return;
-
-                                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                                byte[] buffer = new byte[4096];
-                                int len;
-                                while ((len = is.read(buffer)) != -1) {
-                                    baos.write(buffer, 0, len);
-                                }
-                                is.close();
-
-                                String bodyStr = baos.toString("UTF-8");
-                                String modified = modifyAnswerBody(bodyStr);
-
-                                if (!modified.equals(bodyStr)) {
-                                    showDialog(urlStr, bodyStr, modified);
-                                    InputStream newIs = new java.io.ByteArrayInputStream(modified.getBytes(StandardCharsets.UTF_8));
-                                    param.setResult(newIs);
-                                } else {
-                                    showDialog(urlStr, bodyStr, bodyStr);
-                                    InputStream newIs = new java.io.ByteArrayInputStream(bodyStr.getBytes(StandardCharsets.UTF_8));
-                                    param.setResult(newIs);
-                                }
-                            } catch (Throwable t) {
-                                showToast("HttpURLConnection 处理失败: " + t.getMessage());
-                            }
-                        }
-                    }
-            );
-            recordHook("HttpURLConnection.getInputStream()");
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private void hookHttpURLConnectionResponseCode(ClassLoader cl) {
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "java.net.HttpURLConnection",
-                    cl,
-                    "getResponseCode",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            try {
-                                Object conn = param.thisObject;
-                                Object urlObj = XposedHelpers.getObjectField(conn, "url");
-                                String urlStr = urlObj != null ? urlObj.toString() : "";
-                                if (urlStr.contains(TARGET_PATH)) {
-                                    showToast("检测到目标接口请求: " + urlStr.substring(0, 50));
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                        }
-                    }
-            );
-            recordHook("HttpURLConnection.getResponseCode()");
-        } catch (Throwable ignored) {
-        }
-    }
-
-    // ========== Apache HttpClient Hook ==========
-
-    private void hookApacheHttpClientExecute(ClassLoader cl) {
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "org.apache.http.client.HttpClient",
-                    cl,
-                    "execute",
-                    "org.apache.http.HttpRequest",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            try {
-                                Object response = param.getResult();
-                                if (response != null) {
-                                    Object entity = XposedHelpers.callMethod(response, "getEntity");
-                                    if (entity != null) {
-                                        InputStream is = (InputStream) XposedHelpers.callMethod(entity, "getContent");
-                                        BufferedReader reader = new BufferedReader(new InputStreamReader(is));
-                                        StringBuilder sb = new StringBuilder();
-                                        String line;
-                                        while ((line = reader.readLine()) != null) {
-                                            sb.append(line);
-                                        }
-                                        reader.close();
-                                        String bodyStr = sb.toString();
-
-                                        Object request = param.args[0];
-                                        Object uri = XposedHelpers.callMethod(request, "getRequestLine");
-                                        String urlStr = uri != null ? uri.toString() : "";
-
-                                        if (urlStr.contains(TARGET_PATH)) {
-                                            String modified = modifyAnswerBody(bodyStr);
-                                            if (!modified.equals(bodyStr)) {
-                                                showDialog(urlStr, bodyStr, modified);
-                                            }
-                                        }
-                                    }
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                        }
-                    }
-            );
-            recordHook("Apache HttpClient.execute()");
-        } catch (Throwable ignored) {
-        }
-    }
-
-    // ========== 兜底 Hook：尝试 hook 所有含 execute 的方法 ==========
-
-    private void hookAllExecuteMethods(ClassLoader cl) {
-        try {
-            // 通过反射查找所有可能的 Call 类
-            Class<?> callCls = XposedHelpers.findClassIfExists("okhttp3.Call", cl);
-            if (callCls != null) {
+    // ========== OkHttp Hook（覆盖多个入口） ==========
+    private void hookOkHttpLayer(final ClassLoader cl) {
+        // Hook okhttp3.RealCall / okhttp3.internal.connection.RealCall 的 getResponseWithInterceptorChain()
+        for (String realCallName : new String[]{"okhttp3.RealCall", "okhttp3.internal.connection.RealCall"}) {
+            try {
                 XposedHelpers.findAndHookMethod(
-                        callCls,
-                        "execute",
+                        realCallName, cl, "getResponseWithInterceptorChain",
                         new XC_MethodHook() {
                             @Override
                             protected void afterHookedMethod(MethodHookParam param) {
                                 try {
                                     Object response = param.getResult();
                                     if (response != null) {
-                                        processResponse(response, param, cl);
+                                        processOkHttpResponse(response, param);
                                     }
                                 } catch (Throwable ignored) {
                                 }
                             }
                         }
                 );
-                recordHook("okhttp3.Call (类对象)");
+            } catch (Throwable ignored) {
             }
+        }
+
+        // Hook okhttp3.Call.execute()
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "okhttp3.Call", cl, "execute",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                Object response = param.getResult();
+                                if (response != null) {
+                                    processOkHttpResponse(response, param);
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable ignored) {
+        }
+
+        // Hook okhttp3.Callback.onResponse(Call, Response)
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "okhttp3.Callback", cl, "onResponse",
+                    "okhttp3.Call", "okhttp3.Response",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            try {
+                                Object response = param.args[1];
+                                if (response != null) {
+                                    processOkHttpResponse(response, param);
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable ignored) {
+        }
+
+        // Hook okhttp3.Interceptor.Chain.proceed(Request)
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "okhttp3.Interceptor$Chain", cl, "proceed", "okhttp3.Request",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                Object response = param.getResult();
+                                if (response != null) {
+                                    processOkHttpResponse(response, param);
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable ignored) {
+        }
+
+        // Hook OkHttpClient.newCall(Request) - 记录所有请求
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "okhttp3.OkHttpClient", cl, "newCall", "okhttp3.Request",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                Object request = param.args[0];
+                                Object url = XposedHelpers.callMethod(request, "url");
+                                if (url != null) {
+                                    String urlStr = url.toString();
+                                    showToastSafe("[OkHttp 请求] " + urlStr.substring(0, Math.min(urlStr.length(), 60)));
+                                    writeRequestRecord("OKHTTP", urlStr);
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+            );
         } catch (Throwable ignored) {
         }
     }
 
-    // ========== 响应处理方法 ==========
-
-    private void processResponse(Object response, XC_MethodHook.MethodHookParam param, ClassLoader cl) {
+    // ========== HttpURLConnection Hook ==========
+    private void hookHttpURLConnectionLayer(final ClassLoader cl) {
+        // Hook getResponseCode() - 最简单的检测点
         try {
-            String urlStr = extractUrl(response);
-            if (urlStr == null) {
-                showToast("extractUrl 返回 null");
-                return;
-            }
+            XposedHelpers.findAndHookMethod(
+                    "java.net.HttpURLConnection", cl, "getResponseCode",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                Object conn = param.thisObject;
+                                Object url = XposedHelpers.callMethod(conn, "getURL");
+                                if (url != null) {
+                                    String urlStr = url.toString();
+                                    showToastSafe("[HttpURLConnection] " + urlStr.substring(0, Math.min(urlStr.length(), 60)));
+                                    writeRequestRecord("HTTP_URL_CONN", urlStr);
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable ignored) {
+        }
 
-            showToast("响应 URL: " + urlStr.substring(0, Math.min(urlStr.length(), 50)));
+        // Hook getInputStream() - 获取响应体
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "java.net.HttpURLConnection", cl, "getInputStream",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                Object conn = param.thisObject;
+                                Object url = XposedHelpers.callMethod(conn, "getURL");
+                                String urlStr = url != null ? url.toString() : "";
+                                if (!urlStr.contains(TARGET_PATH)) {
+                                    return;
+                                }
+                                InputStream is = (InputStream) param.getResult();
+                                if (is == null) return;
+                                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                byte[] buf = new byte[4096];
+                                int n;
+                                while ((n = is.read(buf)) != -1) {
+                                    baos.write(buf, 0, n);
+                                }
+                                is.close();
+                                String bodyStr = baos.toString("UTF-8");
+                                String modified = modifyAnswerBody(bodyStr);
+                                // 无论是否修改，都弹窗
+                                showDialog(urlStr, bodyStr, modified);
+                                param.setResult(new java.io.ByteArrayInputStream(
+                                        modified.getBytes(StandardCharsets.UTF_8)));
+                            } catch (Throwable t) {
+                                showToastSafe("[HttpURLConnection 处理] " + t.getMessage());
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable ignored) {
+        }
+    }
 
-            if (!urlStr.contains(TARGET_PATH)) {
-                return;
-            }
+    // ========== Socket 底层 Hook（最兜底） ==========
+    private void hookSocketLayer(final ClassLoader cl) {
+        // Hook Socket.connect(SocketAddress, timeout)
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "java.net.Socket", cl, "connect",
+                    "java.net.SocketAddress", int.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            try {
+                                Object addr = param.args[0];
+                                if (addr instanceof InetSocketAddress) {
+                                    InetSocketAddress isa = (InetSocketAddress) addr;
+                                    String host = isa.getHostName();
+                                    showToastSafe("[Socket] " + host + ":" + isa.getPort());
+                                    writeRequestRecord("SOCKET", host + ":" + isa.getPort());
+                                } else if (addr != null) {
+                                    showToastSafe("[Socket] " + addr.toString());
+                                    writeRequestRecord("SOCKET", addr.toString());
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable ignored) {
+        }
 
-            showToast("=== 检测到目标接口！ ===");
+        // Hook Socket.getOutputStream() - 记录发送内容
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "java.net.Socket", cl, "getOutputStream",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                Object socket = param.thisObject;
+                                Object addr = XposedHelpers.callMethod(socket, "getRemoteSocketAddress");
+                                if (addr != null) {
+                                    showToastSafe("[Socket 输出] " + addr.toString().substring(0,
+                                            Math.min(addr.toString().length(), 60)));
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable ignored) {
+        }
+    }
 
-            byte[] bodyBytes = extractBodyBytes(response);
+    // ========== URL.openConnection Hook ==========
+    private void hookURLOpenConnection(final ClassLoader cl) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "java.net.URL", cl, "openConnection",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                URL url = (URL) param.thisObject;
+                                String urlStr = url.toString();
+                                showToastSafe("[URL] " + urlStr.substring(0, Math.min(urlStr.length(), 60)));
+                                writeRequestRecord("URL_CONN", urlStr);
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable ignored) {
+        }
+    }
+
+    // ========== WebView Hook（答题页面可能用 webview 渲染）==============
+    private void hookWebViewLayer(final ClassLoader cl) {
+        // Hook WebView.loadUrl(String)
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "android.webkit.WebView", cl, "loadUrl",
+                    String.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            try {
+                                String url = (String) param.args[0];
+                                if (url != null) {
+                                    showToastSafe("[WebView] " + url.substring(0, Math.min(url.length(), 60)));
+                                    writeRequestRecord("WEBVIEW", url);
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable ignored) {
+        }
+
+        // Hook WebView.loadUrl(String, Map<String,String>)
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "android.webkit.WebView", cl, "loadUrl",
+                    String.class, java.util.Map.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            try {
+                                String url = (String) param.args[0];
+                                if (url != null) {
+                                    showToastSafe("[WebView+Headers] " + url.substring(0, Math.min(url.length(), 60)));
+                                    writeRequestRecord("WEBVIEW", url);
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable ignored) {
+        }
+
+        // Hook WebViewClient.shouldInterceptRequest - 捕获请求和响应
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "android.webkit.WebViewClient", cl, "shouldInterceptRequest",
+                    "android.webkit.WebView", "android.webkit.WebResourceRequest",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                Object req = param.args[1];
+                                Object urlObj = XposedHelpers.callMethod(req, "getUrl");
+                                if (urlObj != null) {
+                                    String urlStr = urlObj.toString();
+                                    showToastSafe("[WebView 拦截] " + urlStr.substring(0, Math.min(urlStr.length(), 60)));
+                                    writeRequestRecord("WEBVIEW_INTERCEPT", urlStr);
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable ignored) {
+        }
+    }
+
+    // ========== 处理 OkHttp 响应 ==========
+    private void processOkHttpResponse(Object response, XC_MethodHook.MethodHookParam param) {
+        try {
+            String urlStr = extractOkHttpUrl(response);
+            if (urlStr == null) return;
+
+            showToastSafe("[响应] " + urlStr.substring(0, Math.min(urlStr.length(), 60)));
+            writeRequestRecord("OKHTTP_RESP", urlStr);
+
+            if (!urlStr.contains(TARGET_PATH)) return;
+
+            showToastSafe("=== 目标接口命中！ ===");
+            targetHitCounter.incrementAndGet();
+
+            byte[] bodyBytes = extractOkHttpBodyBytes(response);
             if (bodyBytes == null || bodyBytes.length == 0) {
-                showToast("bodyBytes 为空");
+                showToastSafe("响应体为空");
                 return;
             }
 
-            String contentType = extractContentType(response);
-            String original = new String(bodyBytes, StandardCharsets.UTF_8);
+            String bodyStr = new String(bodyBytes, StandardCharsets.UTF_8);
+            String modified = modifyAnswerBody(bodyStr);
 
-            showToast("响应长度: " + bodyBytes.length + " 字节");
-
-            String modified = modifyAnswerBody(original);
-
-            if (!modified.equals(original)) {
-                showToast("答案已修改");
-                Object newResponse = buildNewResponse(response, modified, contentType, cl);
-                if (newResponse != null) {
-                    param.setResult(newResponse);
-                    showDialog(urlStr, original, modified);
+            if (!modified.equals(bodyStr)) {
+                // 尝试替换响应体
+                String contentType = extractOkHttpContentType(response);
+                Object newResp = buildOkHttpResponse(response, modified, contentType);
+                if (newResp != null) {
+                    param.setResult(newResp);
+                    showDialog(urlStr, bodyStr, modified);
                     return;
-                } else {
-                    showToast("buildNewResponse 返回 null");
                 }
             }
-            showDialog(urlStr, original, original);
+            // 即使没修改也弹窗
+            showDialog(urlStr, bodyStr, bodyStr);
         } catch (Throwable t) {
-            showToast("processResponse 异常: " + t.getMessage());
+            showToastSafe("处理响应失败: " + t.getMessage());
         }
     }
 
-    private void processResponseCallback(Object response, XC_MethodHook.MethodHookParam param, ClassLoader cl) {
-        try {
-            String urlStr = extractUrl(response);
-            if (urlStr == null || !urlStr.contains(TARGET_PATH)) return;
-
-            showToast("Callback 检测到目标接口");
-
-            byte[] bodyBytes = extractBodyBytes(response);
-            if (bodyBytes == null || bodyBytes.length == 0) return;
-
-            String original = new String(bodyBytes, StandardCharsets.UTF_8);
-            showDialog(urlStr, original, original);
-        } catch (Throwable t) {
-            showToast("processResponseCallback 异常: " + t.getMessage());
-        }
-    }
-
-    private String extractUrl(Object response) {
+    private String extractOkHttpUrl(Object response) {
         try {
             Object request = XposedHelpers.callMethod(response, "request");
             if (request == null) return null;
             Object url = XposedHelpers.callMethod(request, "url");
             return url != null ? url.toString() : null;
         } catch (Throwable t) {
-            showToast("extractUrl 异常: " + t.getMessage());
             return null;
         }
     }
 
-    private byte[] extractBodyBytes(Object response) {
+    private byte[] extractOkHttpBodyBytes(Object response) {
         try {
             Object body = XposedHelpers.callMethod(response, "body");
-            if (body == null) {
-                showToast("body 为 null");
-                return null;
-            }
+            if (body == null) return null;
 
+            // 优先用 bytes()
             try {
                 Object bytes = XposedHelpers.callMethod(body, "bytes");
-                if (bytes instanceof byte[]) {
-                    return (byte[]) bytes;
-                }
+                if (bytes instanceof byte[]) return (byte[]) bytes;
             } catch (Throwable ignored) {
             }
-
+            // 备选 string()
             try {
                 Object str = XposedHelpers.callMethod(body, "string");
-                if (str instanceof String) {
-                    return ((String) str).getBytes(StandardCharsets.UTF_8);
-                }
+                if (str instanceof String) return ((String) str).getBytes(StandardCharsets.UTF_8);
             } catch (Throwable ignored) {
             }
-
+            // 再备选：source().getBuffer().clone()
             try {
-                Object sourceObj = XposedHelpers.callMethod(body, "source");
-                if (sourceObj != null) {
-                    Object bufferObj = XposedHelpers.callMethod(sourceObj, "getBuffer");
-                    if (bufferObj != null) {
-                        Object clone = XposedHelpers.callMethod(bufferObj, "clone");
-                        if (clone instanceof byte[]) {
-                            return (byte[]) clone;
-                        }
+                Object source = XposedHelpers.callMethod(body, "source");
+                if (source != null) {
+                    Object buffer = XposedHelpers.callMethod(source, "getBuffer");
+                    if (buffer != null) {
+                        Object clone = XposedHelpers.callMethod(buffer, "clone");
+                        if (clone instanceof byte[]) return (byte[]) clone;
                     }
                 }
             } catch (Throwable ignored) {
             }
-
-            showToast("无法提取 body 内容");
-        } catch (Throwable t) {
-            showToast("extractBodyBytes 异常: " + t.getMessage());
+        } catch (Throwable ignored) {
         }
         return null;
     }
 
-    private String extractContentType(Object response) {
+    private String extractOkHttpContentType(Object response) {
         try {
             Object body = XposedHelpers.callMethod(response, "body");
             if (body == null) return null;
@@ -679,49 +710,49 @@ public class XposedInit implements IXposedHookLoadPackage {
         }
     }
 
-    private Object buildNewResponse(Object originalResponse, String newBodyStr, String contentType, ClassLoader cl) {
+    private Object buildOkHttpResponse(Object originalResponse, String newBodyStr, String contentType, ClassLoader cl) {
         try {
-            ClassLoader safeCl = (cl != null) ? cl : targetClassLoader;
+            ClassLoader safeCl = cl != null ? cl : targetClassLoader;
             if (safeCl == null) return null;
 
             byte[] bodyBytes = newBodyStr.getBytes(StandardCharsets.UTF_8);
 
-            Object mediaTypeObj = null;
+            Object mediaType = null;
             try {
                 if (contentType != null && !contentType.isEmpty()) {
                     Class<?> mediaTypeCls = XposedHelpers.findClassIfExists("okhttp3.MediaType", safeCl);
                     if (mediaTypeCls != null) {
-                        mediaTypeObj = XposedHelpers.callStaticMethod(mediaTypeCls, "parse", contentType);
+                        mediaType = XposedHelpers.callStaticMethod(mediaTypeCls, "parse", contentType);
                     }
                 }
             } catch (Throwable ignored) {
             }
 
-            Object newBody = null;
             Class<?> responseBodyCls = XposedHelpers.findClassIfExists("okhttp3.ResponseBody", safeCl);
-            if (responseBodyCls != null) {
+            if (responseBodyCls == null) return null;
+
+            Object newBody = null;
+            // 尝试多种 create 签名
+            try {
+                newBody = XposedHelpers.callStaticMethod(responseBodyCls, "create", mediaType, bodyBytes);
+            } catch (Throwable ignored) {
+            }
+            if (newBody == null) {
                 try {
-                    newBody = XposedHelpers.callStaticMethod(responseBodyCls, "create", mediaTypeObj, bodyBytes);
+                    newBody = XposedHelpers.callStaticMethod(responseBodyCls, "create", mediaType, newBodyStr);
                 } catch (Throwable ignored) {
                 }
-                if (newBody == null) {
-                    try {
-                        newBody = XposedHelpers.callStaticMethod(responseBodyCls, "create", mediaTypeObj, newBodyStr);
-                    } catch (Throwable ignored) {
+            }
+            if (newBody == null) {
+                try {
+                    Object buffer = XposedHelpers.callStaticMethod(
+                            XposedHelpers.findClassIfExists("okio.Buffer", safeCl),
+                            "writeUtf8", newBodyStr);
+                    if (buffer != null) {
+                        newBody = XposedHelpers.callStaticMethod(responseBodyCls, "create",
+                                mediaType, (long) bodyBytes.length, buffer);
                     }
-                }
-                if (newBody == null) {
-                    try {
-                        Object buffer = XposedHelpers.callStaticMethod(
-                                XposedHelpers.findClassIfExists("okio.Buffer", safeCl),
-                                "writeUtf8", newBodyStr);
-                        if (buffer != null) {
-                            newBody = XposedHelpers.callStaticMethod(
-                                    responseBodyCls, "create",
-                                    mediaTypeObj, (long) bodyBytes.length, buffer);
-                        }
-                    } catch (Throwable ignored) {
-                    }
+                } catch (Throwable ignored) {
                 }
             }
 
@@ -731,75 +762,98 @@ public class XposedInit implements IXposedHookLoadPackage {
             newBuilder = XposedHelpers.callMethod(newBuilder, "body", newBody);
             return XposedHelpers.callMethod(newBuilder, "build");
         } catch (Throwable t) {
-            showToast("buildNewResponse 异常: " + t.getMessage());
             return null;
         }
     }
 
+    // ========== 修改答案内容 ==========
     private String modifyAnswerBody(String bodyStr) {
         try {
-            showToast("开始解析 JSON，长度: " + bodyStr.length());
-
             JSONObject root = new JSONObject(bodyStr);
-            String code = root.optString("code");
-            showToast("code = " + code);
-
-            if (!"success".equals(code)) {
-                showToast("code 不是 success");
-                return bodyStr;
-            }
-
+            if (!"success".equals(root.optString("code"))) return bodyStr;
             JSONObject data = root.optJSONObject("data");
-            if (data == null) {
-                showToast("data 为 null");
-                return bodyStr;
-            }
-
+            if (data == null) return bodyStr;
             JSONArray options = data.optJSONArray("answerOptionList");
-            if (options == null || options.length() == 0) {
-                showToast("answerOptionList 为空或不存在");
-                return bodyStr;
-            }
-
-            showToast("找到 answerOptionList，长度: " + options.length());
+            if (options == null || options.length() == 0) return bodyStr;
 
             boolean changed = false;
             for (int i = 0; i < options.length(); i++) {
                 JSONObject opt = options.optJSONObject(i);
                 if (opt == null) continue;
-
-                int isRight = opt.optInt("isRight");
-                showToast("选项 " + i + ": isRight = " + isRight);
-
-                if (isRight == 1) {
+                if (opt.optInt("isRight") == 1) {
                     String text = opt.optString("optionText", "");
-                    String wrapped = "【 " + text + " 正确答案 】";
-                    opt.put("optionText", wrapped);
+                    opt.put("optionText", "【 " + text + " 正确答案 】");
                     changed = true;
-                    showToast("已修改正确答案: " + text);
                 }
             }
-
             return changed ? root.toString() : bodyStr;
         } catch (Throwable t) {
-            showToast("modifyAnswerBody 异常: " + t.getMessage());
             return bodyStr;
         }
     }
 
-    private void showModuleStartedToast(final Context ctx) {
-        if (ctx == null) return;
+    // ========== 写入请求记录到模块的 SharedPreferences（让 UI 能读取）==========
+    private void writeRequestRecord(String type, String urlStr) {
+        try {
+            Context ctx = appContext;
+            if (ctx == null) return;
+            // 获取模块包的 Context（跨进程写入）
+            try {
+                ctx = ctx.createPackageContext(MODULE_PACKAGE,
+                        Context.CONTEXT_IGNORE_SECURITY | Context.CONTEXT_INCLUDE_CODE);
+            } catch (Throwable ignored) {
+            }
+            SharedPreferences sp = ctx.getSharedPreferences(SP_NAME,
+                    Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
+            int counter = requestCounter.incrementAndGet();
+            String key = "req_" + counter + "_" + System.currentTimeMillis();
+            sp.edit().putString(key, type + "|" + urlStr).commit();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    // ========== Toast（安全，总是尝试用可用的 Context） ==========
+    private void showToastSafe(final String message) {
+        // 优先用已存储的 appContext
+        if (appContext != null) {
+            postToast(appContext, message);
+            return;
+        }
+        // 否则尝试从 ActivityThread 获取当前 Application
+        try {
+            Object activityThread = XposedHelpers.callStaticMethod(
+                    XposedHelpers.findClass("android.app.ActivityThread", null),
+                    "currentActivityThread");
+            if (activityThread != null) {
+                Context ctx = (Context) XposedHelpers.callMethod(activityThread, "getApplication");
+                if (ctx != null) {
+                    appContext = ctx;
+                    postToast(ctx, message);
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        // 最后手段：记录到 Xposed 日志
+        try {
+            XposedBridge.log("[答案模块] " + message);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void postToast(final Context ctx, final String message) {
         new Handler(Looper.getMainLooper()).post(new Runnable() {
             @Override
             public void run() {
                 try {
-                    Toast.makeText(ctx, "答案显示模块已生效，正在监控 tz.ycsy.az", Toast.LENGTH_LONG).show();
+                    Toast.makeText(ctx, message, Toast.LENGTH_SHORT).show();
                 } catch (Throwable ignored) {
                 }
             }
         });
     }
 
+    // ========== 弹窗 ==========
     private void showDialog(final String url, final String originalBody, final String modifiedBody) {
         final Context ctx = appContext;
         if (ctx == null) return;
@@ -818,21 +872,19 @@ public class XposedInit implements IXposedHookLoadPackage {
                     titleReq.setText("请求 URL");
                     titleReq.setTextSize(14);
                     titleReq.setTextColor(0xFF1976D2);
-                    container.addView(titleReq, lp());
+                    container.addView(titleReq, lpMatch());
 
                     TextView urlView = new TextView(ctx);
                     urlView.setText(url);
                     urlView.setTextSize(11);
                     urlView.setTextColor(0xFF212121);
-                    container.addView(urlView, lp());
+                    container.addView(urlView, lpMatch());
 
                     TextView titleResp = new TextView(ctx);
                     titleResp.setText("响应内容");
                     titleResp.setTextSize(14);
                     titleResp.setTextColor(0xFF1976D2);
-                    LinearLayout.LayoutParams lpTitle = lp();
-                    lpTitle.topMargin = pad;
-                    container.addView(titleResp, lpTitle);
+                    container.addView(titleResp, lpMatch());
 
                     TextView bodyView = new TextView(ctx);
                     bodyView.setText(preview(originalBody));
@@ -840,16 +892,14 @@ public class XposedInit implements IXposedHookLoadPackage {
                     bodyView.setTextColor(0xFF212121);
                     bodyView.setMovementMethod(new ScrollingMovementMethod());
                     bodyView.setMaxHeight(dp2px(ctx, 300));
-                    container.addView(bodyView, lp());
+                    container.addView(bodyView, lpMatch());
 
                     if (!originalBody.equals(modifiedBody)) {
                         TextView titleMod = new TextView(ctx);
                         titleMod.setText("已修改（正确答案已标记）");
                         titleMod.setTextSize(14);
                         titleMod.setTextColor(0xFFc62828);
-                        LinearLayout.LayoutParams lpM = lp();
-                        lpM.topMargin = pad;
-                        container.addView(titleMod, lpM);
+                        container.addView(titleMod, lpMatch());
 
                         TextView modView = new TextView(ctx);
                         modView.setText(preview(modifiedBody));
@@ -857,14 +907,14 @@ public class XposedInit implements IXposedHookLoadPackage {
                         modView.setTextColor(0xFF212121);
                         modView.setMovementMethod(new ScrollingMovementMethod());
                         modView.setMaxHeight(dp2px(ctx, 300));
-                        container.addView(modView, lpM);
+                        container.addView(modView, lpMatch());
                     }
 
                     ScrollView scrollView = new ScrollView(ctx);
                     scrollView.addView(container);
 
                     new AlertDialog.Builder(ctx)
-                            .setTitle("题目响应已拦截")
+                            .setTitle("【题目响应已拦截】")
                             .setView(scrollView)
                             .setPositiveButton("关闭", null)
                             .setCancelable(true)
@@ -881,15 +931,27 @@ public class XposedInit implements IXposedHookLoadPackage {
         return body;
     }
 
-    private static LinearLayout.LayoutParams lp() {
+    private static LinearLayout.LayoutParams lpMatch() {
         return new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
+                LinearLayout.LayoutParams.WRAP_CONTENT);
     }
 
     private static int dp2px(Context ctx, int dp) {
         float density = ctx.getResources().getDisplayMetrics().density;
         return (int) (dp * density + 0.5f);
+    }
+
+    // ========== 暴露给 UI 读取检测结果的方法 ==========
+    public static List<String> getDetectedClients() {
+        return new ArrayList<String>(detectedClients);
+    }
+
+    public static int getTargetHitCount() {
+        return targetHitCounter.get();
+    }
+
+    public static int getRequestCount() {
+        return requestCounter.get();
     }
 }

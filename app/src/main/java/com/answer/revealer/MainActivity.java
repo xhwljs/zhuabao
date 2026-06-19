@@ -2,155 +2,106 @@ package com.answer.revealer;
 
 import android.app.Activity;
 import android.app.ActivityManager;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.ApplicationInfo;
-import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
-import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Process;
-import android.text.format.DateFormat;
-import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public class MainActivity extends Activity {
 
     private static final String TARGET_PACKAGE = "tz.ycsy.az";
     private static final String SP_NAME = "answer_revealer_status";
-    private static final String SP_KEY_ACTIVE = "module_active_v1";
-    private static final String SP_KEY_LAST = "last_intercept_time";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         int pad = dp2px(16);
-        int padBtn = dp2px(12);
 
+        // 外层滚动容器
+        ScrollView scrollView = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.WHITE);
+        root.setBackgroundColor(0xFFFFFFFF);
         root.setPadding(pad, pad, pad, pad);
 
-        // ── 标题 ──────────────────────────────────────────────
+        // ========== 标题 ==========
         TextView title = new TextView(this);
         title.setText("答案显示模块");
         title.setTextSize(22);
-        title.setTextColor(Color.BLACK);
+        title.setTextColor(0xFF000000);
         root.addView(title, lpMatch());
 
-        // ── 模块状态检测 ──────────────────────────────────────
+        // ========== 模块状态 ==========
         boolean active = isModuleActive();
         if (!active) {
             try {
                 SharedPreferences sp = getSharedPreferences(SP_NAME, MODE_PRIVATE);
-                active = sp.getBoolean(SP_KEY_ACTIVE, false);
+                active = sp.getBoolean("module_active_v1", false);
             } catch (Throwable ignored) {
             }
         }
 
-        LinearLayout.LayoutParams section = lpMatch();
-        section.topMargin = pad;
-
-        TextView statusLabel = new TextView(this);
-        statusLabel.setText("模块状态");
-        statusLabel.setTextSize(16);
-        statusLabel.setTextColor(0xFF1976D2);
-        root.addView(statusLabel, section);
-
-        TextView status = new TextView(this);
+        addSectionTitle(root, "模块状态");
+        TextView statusText = new TextView(this);
         if (active) {
-            status.setText("✓ 模块已激活并生效");
-            try {
-                SharedPreferences sp = getSharedPreferences(SP_NAME, MODE_PRIVATE);
-                long last = sp.getLong(SP_KEY_LAST, 0);
-                if (last > 0) {
-                    status.setText(status.getText() + "\n最近拦截时间：" +
-                            DateFormat.format("yyyy-MM-dd HH:mm:ss", last));
-                } else {
-                    status.setText(status.getText() + "\n尚未检测到目标应用的接口请求");
-                }
-            } catch (Throwable ignored) {
-            }
+            statusText.setText("✓ 模块已激活并生效\n提示：请先杀掉目标应用 tz.ycsy.az 的进程，再打开一次，模块才会在目标应用中生效。");
+            statusText.setTextColor(0xFF1B5E20);
         } else {
-            status.setText("✗ 模块尚未在 LSPosed 中启用\n\n请在 LSPosed 管理器中启用本模块，并确认作用域中已勾选：\n  • tz.ycsy.az\n  • com.answer.revealer\n\n启用后杀掉目标应用进程，再打开目标应用即可生效。");
+            statusText.setText("✗ 模块尚未在 LSPosed 中启用\n\n请在 LSPosed 管理器中启用本模块，并确认作用域勾选了：\n  • tz.ycsy.az\n  • com.answer.revealer\n\n启用后杀掉目标应用进程，再打开目标应用。");
+            statusText.setTextColor(0xFFc62828);
         }
-        status.setTextSize(13);
-        status.setTextColor(active ? 0xFF2E7D32 : 0xFFc62828);
-        root.addView(status, lpMatch());
+        statusText.setTextSize(13);
+        root.addView(statusText, lpMatch());
 
-        // ── 目标应用检测 ──────────────────────────────────────
-        TextView targetStatusLabel = new TextView(this);
-        targetStatusLabel.setText("目标应用检测");
-        targetStatusLabel.setTextSize(16);
-        targetStatusLabel.setTextColor(0xFF1976D2);
-        LinearLayout.LayoutParams lpTs = lpMatch();
-        lpTs.topMargin = pad;
-        root.addView(targetStatusLabel, lpTs);
-
-        TextView targetStatus = new TextView(this);
+        // ========== 目标应用检测 ==========
+        addSectionTitle(root, "目标应用检测");
+        StringBuilder targetInfo = new StringBuilder();
         boolean installed = isPackageInstalled(TARGET_PACKAGE);
-        boolean running = isPackageRunning(TARGET_PACKAGE);
         if (installed) {
-            StringBuilder sb = new StringBuilder();
-            sb.append("✓ tz.ycsy.az 已安装");
+            targetInfo.append("✓ tz.ycsy.az 已安装\n");
             try {
-                PackageInfo pi = getPackageManager().getPackageInfo(TARGET_PACKAGE, 0);
-                if (pi != null) {
-                    if (pi.versionName != null) sb.append(" (v").append(pi.versionName).append(")");
-                    if ((pi.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
-                        sb.append("\n  应用类型：系统应用");
-                    } else {
-                        sb.append("\n  应用类型：普通应用");
-                    }
-                    sb.append("\n  当前状态：").append(running ? "运行中" : "未运行");
+                android.content.pm.PackageInfo pi = getPackageManager().getPackageInfo(TARGET_PACKAGE, 0);
+                if (pi != null && pi.versionName != null) {
+                    targetInfo.append("  版本: ").append(pi.versionName).append("\n");
                 }
             } catch (Throwable ignored) {
             }
-            targetStatus.setText(sb.toString());
-            targetStatus.setTextColor(0xFF2E7D32);
+            boolean running = isPackageRunning(TARGET_PACKAGE);
+            targetInfo.append("  运行状态: ").append(running ? "运行中" : "未运行");
         } else {
-            targetStatus.setText("✗ 未检测到 tz.ycsy.az\n请先安装目标应用，或确认包名是否正确");
-            targetStatus.setTextColor(0xFFc62828);
+            targetInfo.append("✗ 未检测到 tz.ycsy.az\n请先安装目标应用。");
         }
-        targetStatus.setTextSize(13);
-        root.addView(targetStatus, lpMatch());
+        TextView targetInfoText = new TextView(this);
+        targetInfoText.setText(targetInfo.toString());
+        targetInfoText.setTextSize(13);
+        targetInfoText.setTextColor(0xFF333333);
+        root.addView(targetInfoText, lpMatch());
 
-        // ── 快捷操作按钮区域 ──────────────────────────────────
-        TextView actionLabel = new TextView(this);
-        actionLabel.setText("快捷操作");
-        actionLabel.setTextSize(16);
-        actionLabel.setTextColor(0xFF1976D2);
-        LinearLayout.LayoutParams lpAction = lpMatch();
-        lpAction.topMargin = pad;
-        root.addView(actionLabel, lpAction);
+        // ========== 快捷操作按钮 ==========
+        addSectionTitle(root, "快捷操作");
 
-        // 按钮容器（横向）
-        LinearLayout btnRow = new LinearLayout(this);
-        btnRow.setOrientation(LinearLayout.HORIZONTAL);
-        btnRow.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams btnRowLp = lpMatch();
-        btnRowLp.topMargin = dp2px(8);
-        root.addView(btnRow, btnRowLp);
+        LinearLayout btnRow1 = new LinearLayout(this);
+        btnRow1.setOrientation(LinearLayout.HORIZONTAL);
+        btnRow1.setGravity(android.view.Gravity.CENTER);
+        root.addView(btnRow1, lpMatch());
 
-        // 「启动目标应用」按钮
         Button btnLaunch = new Button(this);
         btnLaunch.setText("启动目标应用");
-        btnLaunch.setTextSize(14);
-        btnLaunch.setTextColor(Color.WHITE);
+        btnLaunch.setTextSize(13);
+        btnLaunch.setTextColor(0xFFFFFFFF);
         btnLaunch.setBackground(makeButtonBg(0xFF1976D2, dp2px(8)));
-        btnLaunch.setPadding(padBtn, padBtn / 2, padBtn, padBtn / 2);
         btnLaunch.setEnabled(installed);
         btnLaunch.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -158,126 +109,128 @@ public class MainActivity extends Activity {
                 launchTargetApp();
             }
         });
-        LinearLayout.LayoutParams btnLp1 = new LinearLayout.LayoutParams(0, dp2px(44), 1f);
-        btnLp1.rightMargin = dp2px(8);
-        btnRow.addView(btnLaunch, btnLp1);
+        LinearLayout.LayoutParams lpBtn1 = new LinearLayout.LayoutParams(0, dp2px(44), 1f);
+        lpBtn1.rightMargin = dp2px(8);
+        btnRow1.addView(btnLaunch, lpBtn1);
 
-        // 「强制停止」按钮
         Button btnStop = new Button(this);
-        btnStop.setText("强制停止");
-        btnStop.setTextSize(14);
-        btnStop.setTextColor(Color.WHITE);
+        btnStop.setText("杀掉目标进程");
+        btnStop.setTextSize(13);
+        btnStop.setTextColor(0xFFFFFFFF);
         btnStop.setBackground(makeButtonBg(0xFFc62828, dp2px(8)));
-        btnStop.setPadding(padBtn, padBtn / 2, padBtn, padBtn / 2);
         btnStop.setEnabled(installed);
         btnStop.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                confirmForceStop();
-            }
-        });
-        LinearLayout.LayoutParams btnLp2 = new LinearLayout.LayoutParams(0, dp2px(44), 1f);
-        btnRow.addView(btnStop, btnLp2);
-
-        // 第二行按钮：杀掉目标应用进程
-        LinearLayout btnRow2 = new LinearLayout(this);
-        btnRow2.setOrientation(LinearLayout.HORIZONTAL);
-        btnRow2.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams btnRowLp2 = lpMatch();
-        btnRowLp2.topMargin = dp2px(8);
-        root.addView(btnRow2, btnRowLp2);
-
-        Button btnKill = new Button(this);
-        btnKill.setText("杀掉目标应用进程（调试）");
-        btnKill.setTextSize(12);
-        btnKill.setTextColor(Color.WHITE);
-        btnKill.setBackground(makeButtonBg(0xFF795548, dp2px(8)));
-        btnKill.setPadding(padBtn, padBtn / 2, padBtn, padBtn / 2);
-        btnKill.setEnabled(installed);
-        btnKill.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 killTargetProcess();
             }
         });
-        LinearLayout.LayoutParams btnLp3 = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp2px(44));
-        btnRow2.addView(btnKill, btnLp3);
+        btnRow1.addView(btnStop, new LinearLayout.LayoutParams(0, dp2px(44), 1f));
 
-        // ── Hook 接口路径 ─────────────────────────────────────
-        TextView pathLabel = new TextView(this);
-        pathLabel.setText("Hook 接口路径");
-        pathLabel.setTextSize(16);
-        pathLabel.setTextColor(0xFF1976D2);
-        LinearLayout.LayoutParams lp3 = lpMatch();
-        lp3.topMargin = pad;
-        root.addView(pathLabel, lp3);
-
-        TextView path = new TextView(this);
-        path.setText("/edu-core-server/app/exam/getQuestion\n\n（同时 Hook OkHttp 3.x / 4.x / 5.x 的同步与异步调用）");
-        path.setTextSize(13);
-        path.setTextColor(Color.BLACK);
-        root.addView(path, lpMatch());
-
-        // ── 功能说明 ─────────────────────────────────────────
-        TextView infoLabel = new TextView(this);
-        infoLabel.setText("使用说明");
-        infoLabel.setTextSize(16);
-        infoLabel.setTextColor(0xFF1976D2);
-        LinearLayout.LayoutParams lp4 = lpMatch();
-        lp4.topMargin = pad;
-        root.addView(infoLabel, lp4);
-
-        TextView info = new TextView(this);
-        info.setText("1. 确保在 LSPosed 管理器中已启用本模块，并勾选两个作用域：\n    • tz.ycsy.az\n    • com.answer.revealer\n\n2. 点「杀掉目标应用进程（调试）」或在系统设置中停止目标应用。\n\n3. 点「启动目标应用」打开 tz.ycsy.az，应看到 Toast 提示「答案显示模块已生效」。\n\n4. 进入答题页面触发 /edu-core-server/app/exam/getQuestion 请求，正确答案会被标注为「 xxx 正确答案」格式并弹窗显示。\n\n5. 如未生效，点击「杀掉目标应用进程（调试）」再重新打开目标应用。\n\n重要：LSPosed 作用域中「com.answer.revealer」用于检测模块自身是否激活；「tz.ycsy.az」是 Hook 目标。两者都必须勾选！");
-        info.setTextSize(13);
-        info.setTextColor(Color.BLACK);
-        root.addView(info, lpMatch());
-
-        setContentView(root);
-    }
-
-    /**
-     * 检测包是否已安装
-     */
-    private boolean isPackageInstalled(String pkgName) {
-        try {
-            getPackageManager().getPackageInfo(pkgName, 0);
-            return true;
-        } catch (PackageManager.NameNotFoundException e) {
-            return false;
-        } catch (Throwable t) {
-            return false;
-        }
-    }
-
-    /**
-     * 检测包的进程是否正在运行
-     */
-    private boolean isPackageRunning(String pkgName) {
-        try {
-            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            if (am == null) return false;
-            List<ActivityManager.RunningAppProcessInfo> list = am.getRunningAppProcesses();
-            if (list == null) return false;
-            for (ActivityManager.RunningAppProcessInfo info : list) {
-                if (pkgName.equals(info.processName)) {
-                    return true;
-                }
-                if (info.processName != null && info.processName.startsWith(pkgName + ":")) {
-                    return true;
-                }
+        Button btnRefresh = new Button(this);
+        btnRefresh.setText("刷新检测数据");
+        btnRefresh.setTextSize(13);
+        btnRefresh.setTextColor(0xFFFFFFFF);
+        btnRefresh.setBackground(makeButtonBg(0xFF757575, dp2px(8)));
+        btnRefresh.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Toast.makeText(MainActivity.this, "已刷新，请再次打开目标应用触发检测", Toast.LENGTH_SHORT).show();
+                recreate();
             }
-        } catch (Throwable ignored) {
+        });
+        LinearLayout.LayoutParams lpBtnR = lpMatch();
+        lpBtnR.topMargin = dp2px(8);
+        root.addView(btnRefresh, lpBtnR);
+
+        // ========== HTTP 客户端检测 ==========
+        addSectionTitle(root, "HTTP 客户端检测");
+        TextView httpStatus = new TextView(this);
+        List<String> detectedList = loadStringList("detected_clients");
+        if (detectedList != null && !detectedList.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("在目标应用中检测到以下 HTTP 相关类：\n\n");
+            for (String s : detectedList) {
+                sb.append("  • ").append(s).append("\n");
+            }
+            httpStatus.setText(sb.toString());
+            httpStatus.setTextColor(0xFF1B5E20);
+        } else {
+            httpStatus.setText("尚未检测到目标应用中的 HTTP 客户端\n请按照以下步骤操作：\n  1. 确认 LSPosed 作用域勾选了 tz.ycsy.az\n  2. 点击「杀掉目标进程」\n  3. 点击「启动目标应用」打开目标应用\n  4. 在目标应用中进入答题页面\n  5. 回到本页面点击「刷新检测数据」");
+            httpStatus.setTextColor(0xFF757575);
         }
-        return false;
+        httpStatus.setTextSize(12);
+        root.addView(httpStatus, lpMatch());
+
+        // ========== 最近请求记录 ==========
+        addSectionTitle(root, "最近请求记录");
+        TextView reqRecordText = new TextView(this);
+        StringBuilder recordSb = new StringBuilder();
+        List<String> reqList = loadRequestRecords();
+        if (reqList != null && !reqList.isEmpty()) {
+            recordSb.append("检测到的网络请求（按顺序）：\n\n");
+            for (int i = 0; i < Math.min(reqList.size(), 20); i++) {
+                recordSb.append(String.valueOf(i + 1)).append(". ").append(reqList.get(i)).append("\n");
+            }
+            reqRecordText.setText(recordSb.toString());
+            reqRecordText.setTextColor(0xFF333333);
+        } else {
+            reqRecordText.setText("尚未捕获任何请求\n请先打开目标应用并触发网络操作（如进入答题页面）");
+            reqRecordText.setTextColor(0xFF757575);
+        }
+        reqRecordText.setTextSize(11);
+        root.addView(reqRecordText, lpMatch());
+
+        // ========== Hook 点列表 ==========
+        addSectionTitle(root, "已安装的 Hook 入口（调试用）");
+        TextView hookInfoText = new TextView(this);
+        hookInfoText.setText(
+                "模块会 Hook 以下入口来拦截网络请求：\n\n" +
+                "  1. okhttp3.RealCall.getResponseWithInterceptorChain()\n" +
+                "  2. okhttp3.internal.connection.RealCall.getResponseWithInterceptorChain()\n" +
+                "  3. okhttp3.Call.execute()\n" +
+                "  4. okhttp3.Callback.onResponse(Call, Response)\n" +
+                "  5. okhttp3.OkHttpClient.newCall(Request)\n" +
+                "  6. okhttp3.Interceptor.Chain.proceed(Request)\n" +
+                "  7. java.net.HttpURLConnection.getResponseCode()\n" +
+                "  8. java.net.HttpURLConnection.getInputStream()\n" +
+                "  9. java.net.Socket.connect(SocketAddress, int)\n" +
+                "  10. java.net.URL.openConnection()\n" +
+                "  11. android.webkit.WebView.loadUrl(String)\n" +
+                "  12. android.webkit.WebViewClient.shouldInterceptRequest()\n\n" +
+                "如果目标应用使用了其他网络库（如 Flutter/Dio、React Native、Cordova 等），" +
+                "请告诉我具体的 App 名称，我可以添加对应的 Hook 代码。"
+        );
+        hookInfoText.setTextSize(11);
+        hookInfoText.setTextColor(0xFF666666);
+        root.addView(hookInfoText, lpMatch());
+
+        scrollView.addView(root);
+        setContentView(scrollView);
     }
 
-    /**
-     * 启动目标应用 - 多路径尝试
-     */
+    // ========== 子组件创建方法 ==========
+    private void addSectionTitle(LinearLayout root, String text) {
+        int pad = dp2px(16);
+        TextView tv = new TextView(this);
+        tv.setText(text);
+        tv.setTextSize(16);
+        tv.setTextColor(0xFF1976D2);
+        LinearLayout.LayoutParams lp = lpMatch();
+        lp.topMargin = pad;
+        root.addView(tv, lp);
+    }
+
+    private GradientDrawable makeButtonBg(int color, int radiusPx) {
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setCornerRadius(radiusPx);
+        bg.setColor(color);
+        return bg;
+    }
+
+    // ========== 目标应用启动 / 停止 ==========
     private void launchTargetApp() {
         try {
-            // 方法1：PackageManager.getLaunchIntentForPackage
             Intent launchIntent = getPackageManager().getLaunchIntentForPackage(TARGET_PACKAGE);
             if (launchIntent != null) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -289,8 +242,8 @@ public class MainActivity extends Activity {
         }
 
         try {
-            // 方法2：通过 PackageManager.getInstalledPackages 中查找应用的 launcher Activity
-            PackageInfo pi = getPackageManager().getPackageInfo(TARGET_PACKAGE, PackageManager.GET_ACTIVITIES);
+            android.content.pm.PackageInfo pi = getPackageManager().getPackageInfo(TARGET_PACKAGE,
+                    android.content.pm.PackageManager.GET_ACTIVITIES);
             if (pi != null && pi.activities != null && pi.activities.length > 0) {
                 String activityName = pi.activities[0].name;
                 Intent intent = new Intent();
@@ -300,33 +253,13 @@ public class MainActivity extends Activity {
                     startActivity(intent);
                     Toast.makeText(this, "正在启动 " + activityName, Toast.LENGTH_SHORT).show();
                     return;
-                } catch (Throwable t) {
-                    Toast.makeText(this, "尝试启动 Activity 失败：" + t.getMessage(), Toast.LENGTH_LONG).show();
+                } catch (Throwable ignored) {
                 }
             }
         } catch (Throwable ignored) {
         }
 
         try {
-            // 方法3：通过 ApplicationInfo 的 className 启动
-            ApplicationInfo ai = getPackageManager().getApplicationInfo(TARGET_PACKAGE, PackageManager.GET_META_DATA);
-            if (ai != null) {
-                Intent intent = new Intent();
-                intent.setClassName(TARGET_PACKAGE, ai.className);
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                try {
-                    startActivity(intent);
-                    Toast.makeText(this, "正在启动应用入口类", Toast.LENGTH_SHORT).show();
-                    return;
-                } catch (Throwable t) {
-                    Toast.makeText(this, "尝试启动入口类失败：" + t.getMessage(), Toast.LENGTH_LONG).show();
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-
-        try {
-            // 方法4：通过 META_DATA 中定义的入口或用 ACTION_VIEW
             Intent intent = new Intent(Intent.ACTION_MAIN);
             intent.addCategory(Intent.CATEGORY_LAUNCHER);
             intent.setPackage(TARGET_PACKAGE);
@@ -335,107 +268,14 @@ public class MainActivity extends Activity {
                 startActivity(intent);
                 Toast.makeText(this, "正在启动 tz.ycsy.az...", Toast.LENGTH_SHORT).show();
                 return;
-            } catch (Throwable t) {
-                // 继续 fallback
+            } catch (Throwable ignored) {
             }
         } catch (Throwable ignored) {
         }
 
-        try {
-            // 方法5：Shell am start
-            Runtime.getRuntime().exec("am start -n " + TARGET_PACKAGE + "/");
-            Toast.makeText(this, "已发送启动命令（shell 方式）", Toast.LENGTH_SHORT).show();
-            return;
-        } catch (Throwable ignored) {
-        }
-
-        Toast.makeText(this,
-                "无法启动 tz.ycsy.az\n该应用可能没有声明 Launcher Activity\n请在系统桌面或应用列表中手动打开",
-                Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "无法启动目标应用，请手动在系统桌面打开", Toast.LENGTH_LONG).show();
     }
 
-    /**
-     * 确认强制停止对话框
-     */
-    private void confirmForceStop() {
-        new AlertDialog.Builder(this)
-                .setTitle("确认停止目标应用")
-                .setMessage("确定要停止 tz.ycsy.az 吗？\n\n停止后重新打开目标应用，模块才能生效。\n\n提示：停止后请手动在应用列表中打开 tz.ycsy.az。")
-                .setPositiveButton("确定停止", new android.content.DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(android.content.DialogInterface dialog, int which) {
-                        forceStopTargetApp();
-                    }
-                })
-                .setNegativeButton("取消", null)
-                .show();
-    }
-
-    /**
-     * 停止目标应用 - 多种方法组合
-     */
-    private void forceStopTargetApp() {
-        boolean stopped = false;
-
-        // 方法1：killBackgroundProcesses - Android 自带 API，普通应用可以用
-        try {
-            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            if (am != null) {
-                am.killBackgroundProcesses(TARGET_PACKAGE);
-                stopped = true;
-            }
-        } catch (Throwable ignored) {
-        }
-
-        // 方法2：Shell am force-stop
-        if (!stopped) {
-            try {
-                Runtime.getRuntime().exec("am force-stop " + TARGET_PACKAGE);
-                stopped = true;
-            } catch (Throwable ignored) {
-            }
-        }
-
-        // 方法3：Shell kill pid
-        if (!stopped) {
-            try {
-                ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-                if (am != null) {
-                    List<ActivityManager.RunningAppProcessInfo> list = am.getRunningAppProcesses();
-                    if (list != null) {
-                        for (ActivityManager.RunningAppProcessInfo info : list) {
-                            if (info.processName != null && (TARGET_PACKAGE.equals(info.processName)
-                                    || info.processName.startsWith(TARGET_PACKAGE + ":"))) {
-                                // 杀进程
-                                Process.killProcess(info.pid);
-                            }
-                        }
-                    }
-                }
-                stopped = true;
-            } catch (Throwable ignored) {
-            }
-        }
-
-        // 方法4：Shell killall
-        if (!stopped) {
-            try {
-                Runtime.getRuntime().exec("killall " + TARGET_PACKAGE);
-                stopped = true;
-            } catch (Throwable ignored) {
-            }
-        }
-
-        if (stopped) {
-            Toast.makeText(this, "已停止 tz.ycsy.az，请重新打开目标应用", Toast.LENGTH_LONG).show();
-        } else {
-            Toast.makeText(this, "无法停止目标应用，请在系统设置中手动停止 tz.ycsy.az", Toast.LENGTH_LONG).show();
-        }
-    }
-
-    /**
-     * 杀掉目标应用进程（通过 killBackgroundProcesses + shell），用于调试
-     */
     private void killTargetProcess() {
         try {
             ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
@@ -446,51 +286,84 @@ public class MainActivity extends Activity {
         }
 
         try {
-            // 同时尝试杀掉所有以目标包名开头的进程
-            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            if (am != null) {
-                List<ActivityManager.RunningAppProcessInfo> list = am.getRunningAppProcesses();
-                if (list != null) {
-                    int killed = 0;
-                    for (ActivityManager.RunningAppProcessInfo info : list) {
-                        if (info.processName != null && (TARGET_PACKAGE.equals(info.processName)
-                                || info.processName.startsWith(TARGET_PACKAGE + ":"))) {
-                            Process.killProcess(info.pid);
-                            killed++;
-                        }
-                    }
-                    if (killed > 0) {
-                        Toast.makeText(this, "已杀掉 " + killed + " 个目标应用进程，请重新打开 tz.ycsy.az", Toast.LENGTH_LONG).show();
-                        return;
-                    }
-                }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                Runtime.getRuntime().exec("killall " + TARGET_PACKAGE);
             }
         } catch (Throwable ignored) {
         }
 
+        Toast.makeText(this, "已发送 kill 命令，请再次启动目标应用", Toast.LENGTH_LONG).show();
+    }
+
+    // ========== 辅助方法 ==========
+    private boolean isPackageInstalled(String pkg) {
         try {
-            Runtime.getRuntime().exec("am force-stop " + TARGET_PACKAGE);
-            Toast.makeText(this, "已发送 shell force-stop 命令（需 root 或系统权限）", Toast.LENGTH_LONG).show();
+            getPackageManager().getPackageInfo(pkg, 0);
+            return true;
         } catch (Throwable t) {
-            Toast.makeText(this, "请在系统设置→应用→tz.ycsy.az→强制停止中手动操作", Toast.LENGTH_LONG).show();
+            return false;
         }
     }
 
-    /**
-     * 生成圆角按钮背景
-     */
-    private GradientDrawable makeButtonBg(int color, int radiusPx) {
-        GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(radiusPx);
-        bg.setColor(color);
-        return bg;
+    private boolean isPackageRunning(String pkg) {
+        try {
+            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            if (am == null) return false;
+            List<ActivityManager.RunningAppProcessInfo> list = am.getRunningAppProcesses();
+            if (list == null) return false;
+            for (ActivityManager.RunningAppProcessInfo info : list) {
+                if (pkg.equals(info.processName)) return true;
+                if (info.processName != null && info.processName.startsWith(pkg + ":")) return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
     }
 
-    /**
-     * 模块激活检测。
-     * 优先由 Xposed Hook 在模块包中替换此方法返回值为 true；
-     * 如 hook 未生效，MainActivity.onCreate 会再通过 SharedPreferences 做二次检测。
-     */
+    // ========== SharedPreferences 读写 ==========
+    private SharedPreferences getModuleSP() {
+        return getSharedPreferences(SP_NAME, MODE_PRIVATE | MODE_MULTI_PROCESS);
+    }
+
+    private List<String> loadRequestRecords() {
+        try {
+            SharedPreferences sp = getModuleSP();
+            List<String> list = new ArrayList<String>();
+            Map<String, ?> all = sp.getAll();
+            List<String> keys = new ArrayList<String>(all.keySet());
+            java.util.Collections.sort(keys);
+            // 只取以 req_ 开头的记录
+            for (String key : keys) {
+                if (key.startsWith("req_")) {
+                    Object value = all.get(key);
+                    if (value instanceof String) {
+                        list.add((String) value);
+                    }
+                }
+            }
+            return list;
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private List<String> loadStringList(String key) {
+        try {
+            SharedPreferences sp = getModuleSP();
+            String val = sp.getString(key, null);
+            if (val == null) return null;
+            String[] arr = val.split("\n");
+            List<String> list = new ArrayList<String>();
+            for (String s : arr) {
+                if (s != null && s.trim().length() > 0) list.add(s);
+            }
+            return list;
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    // ========== 由 XposedInit Hook 替换的方法 ==========
     public static boolean isModuleActive() {
         return false;
     }
@@ -498,8 +371,7 @@ public class MainActivity extends Activity {
     private LinearLayout.LayoutParams lpMatch() {
         return new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
+                LinearLayout.LayoutParams.WRAP_CONTENT);
     }
 
     private int dp2px(int dp) {
