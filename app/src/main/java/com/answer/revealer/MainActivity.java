@@ -151,19 +151,26 @@ public class MainActivity extends Activity {
         }
 
         // 2. 回退：从目标应用的 SharedPreferences 读
-        if (data.hookInstalledCount < 0 || data.requestCount < 0 || data.targetHitCount < 0) {
+        // 注意：值为 0 也尝试读（可能是 ContentProvider 写入失败但目标应用 SP 中有值）
+        if (data.hookInstalledCount <= 0 || data.requestCount <= 0 || data.targetHitCount <= 0) {
             try {
                 Context targetCtx = createPackageContext(TARGET_PACKAGE,
                         Context.CONTEXT_IGNORE_SECURITY | Context.CONTEXT_INCLUDE_CODE);
                 SharedPreferences sp = targetCtx.getSharedPreferences("answer_revealer_status",
                         Context.MODE_MULTI_PROCESS | Context.MODE_PRIVATE);
-                if (data.hookInstalledCount < 0)
-                    data.hookInstalledCount = sp.getInt("hook_installed_count", -1);
-                if (data.requestCount < 0)
-                    data.requestCount = sp.getInt("request_count", -1);
-                if (data.targetHitCount < 0)
-                    data.targetHitCount = sp.getInt("target_hit_count", -1);
-                if (data.lastHookTime < 0)
+                if (data.hookInstalledCount <= 0) {
+                    int v = sp.getInt("hook_installed_count", 0);
+                    if (v > 0) data.hookInstalledCount = v;
+                }
+                if (data.requestCount <= 0) {
+                    int v = sp.getInt("request_count", 0);
+                    if (v > 0) data.requestCount = v;
+                }
+                if (data.targetHitCount <= 0) {
+                    int v = sp.getInt("target_hit_count", 0);
+                    if (v > 0) data.targetHitCount = v;
+                }
+                if (data.lastHookTime <= 0)
                     data.lastHookTime = sp.getLong("last_hook_time", -1);
                 if (!data.moduleActive)
                     data.moduleActive = sp.getBoolean("module_active_v1", false);
@@ -1181,73 +1188,90 @@ public class MainActivity extends Activity {
 
     private void killTargetProcess() {
         final StringBuilder result = new StringBuilder();
+        boolean success = false;
 
-        // 策略 1: killBackgroundProcesses（系统 API，无需 root，只能杀后台缓存进程）
-        try {
-            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            if (am != null) {
-                am.killBackgroundProcesses(TARGET_PACKAGE);
-                result.append("[killBackground] ");
-            }
-        } catch (Throwable ignored) {}
-
-        // 策略 2: shell "am kill" 命令（与 API 等效，无需 root，杀后台进程）
-        try {
-            Process p = Runtime.getRuntime().exec("am kill " + TARGET_PACKAGE);
-            p.waitFor();
-            result.append("[am kill] ");
-        } catch (Throwable ignored) {}
-
-        // 策略 3: shell "killall" + "kill -9 PID"（无需 root 只能杀自己的进程）
-        try {
-            // 先尝试 killall
-            Runtime.getRuntime().exec("killall " + TARGET_PACKAGE);
-            result.append("[killall] ");
-        } catch (Throwable ignored) {}
-
-        // 策略 4: 通过 pidof 找到 PID，然后 kill -9
-        try {
-            java.io.BufferedReader reader = new java.io.BufferedReader(
-                new java.io.InputStreamReader(Runtime.getRuntime().exec("pidof " + TARGET_PACKAGE).getInputStream()));
-            String pidLine = reader.readLine();
-            reader.close();
-            if (pidLine != null && pidLine.trim().length() > 0) {
-                for (String pid : pidLine.trim().split(" ")) {
-                    if (pid.length() > 0) {
-                        try {
-                            Runtime.getRuntime().exec("kill -9 " + pid);
-                            result.append("[kill-9:" + pid + "] ");
-                        } catch (Throwable ignored) {}
-                    }
+        // 策略 1: su root 执行 am force-stop（最可靠，已 root 的手机可直接执行）
+        // 尝试多种 su 命令格式（不同 root 管理器实现不同）
+        String[] suCmds = new String[]{
+                "su -c \"am force-stop " + TARGET_PACKAGE + "\"",
+                "su -c 'am force-stop " + TARGET_PACKAGE + "'",
+                "su -c am\\ force-stop\\ " + TARGET_PACKAGE,
+                "su 0 am force-stop " + TARGET_PACKAGE,
+                "su --shell=sh -c \"am force-stop " + TARGET_PACKAGE + "\""
+        };
+        for (String cmd : suCmds) {
+            try {
+                Process p = Runtime.getRuntime().exec(cmd);
+                int exitCode = p.waitFor();
+                if (exitCode == 0) {
+                    success = true;
+                    result.append("[root-am-force-stop ✓] ");
+                    break;
+                } else {
+                    result.append("[root-am-force-stop exit=" + exitCode + "] ");
                 }
+            } catch (Throwable ignored) {
+                result.append("[root-am-force-stop ✗] ");
             }
-        } catch (Throwable ignored) {}
-
-        // 策略 5: 尝试 am force-stop（需要系统签名或 root，多数普通 app 无法使用）
-        boolean forceStopSuccess = false;
-        try {
-            Process p = Runtime.getRuntime().exec("am force-stop " + TARGET_PACKAGE);
-            int exitCode = p.waitFor();
-            if (exitCode == 0) {
-                forceStopSuccess = true;
-                result.append("[force-stop ✓] ");
-            } else {
-                result.append("[force-stop ✗] ");
-            }
-        } catch (Throwable ignored) {
-            result.append("[force-stop ✗] ");
         }
 
-        // 策略 6: 如果 am force-stop 失败（最常见的情况），跳转到应用信息页面让用户手动点「强制停止」
-        final boolean needUserAction = !forceStopSuccess;
-        if (needUserAction) {
-            // 弹窗提示并跳转应用信息页
+        // 策略 2: root killall + PID kill
+        if (!success) {
+            try {
+                // 先找 PID
+                java.io.BufferedReader pidReader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(
+                                Runtime.getRuntime().exec("su -c \"pidof " + TARGET_PACKAGE + "\"").getInputStream()));
+                String pidLine = pidReader.readLine();
+                pidReader.close();
+                if (pidLine != null && pidLine.trim().length() > 0) {
+                    for (String pid : pidLine.trim().split(" ")) {
+                        if (pid.length() > 0) {
+                            try {
+                                Process p = Runtime.getRuntime().exec("su -c \"kill -9 " + pid + "\"");
+                                p.waitFor();
+                                result.append("[kill-9:" + pid + "] ");
+                            } catch (Throwable ignored) {}
+                        }
+                    }
+                    success = true;
+                }
+            } catch (Throwable ignored) {
+                result.append("[root-pid-kill ✗] ");
+            }
+        }
+
+        // 策略 3: 普通 API（非 root，可能杀不掉前台进程）
+        if (!success) {
+            try {
+                ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+                if (am != null) am.killBackgroundProcesses(TARGET_PACKAGE);
+                result.append("[killBackground] ");
+            } catch (Throwable ignored) {}
+            try {
+                Process p = Runtime.getRuntime().exec("killall " + TARGET_PACKAGE);
+                p.waitFor();
+                result.append("[killall] ");
+            } catch (Throwable ignored) {}
+        }
+
+        // 清空本地统计中的活动时间戳（避免显示"运行中"）
+        try {
+            android.content.SharedPreferences sp = getSharedPreferences("module_stats", MODE_PRIVATE);
+            sp.edit().putLong("last_hook_time", 0).apply();
+        } catch (Throwable ignored) {}
+
+        // 结果提示
+        if (success) {
+            Toast.makeText(this, "已强制停止目标应用（root 模式）",
+                    Toast.LENGTH_SHORT).show();
+            mCurrentPage = 0;
+            refreshStatsAsync();
+        } else {
+            // root 失败 → 跳转系统设置让用户手动停止
             new android.app.AlertDialog.Builder(this)
-                    .setTitle("强制停止目标应用")
-                    .setMessage("当前应用无系统权限直接停止「" + TARGET_PACKAGE + "」。\n\n"
-                            + "请点击下方「前往设置」按钮，在系统应用信息页点击「强制停止」或「停止」。\n\n"
-                            + "停止后回到本应用点击「启动目标应用」重新进入答题页面。\n\n"
-                            + "已尝试的操作：" + result.toString())
+                    .setTitle("强制停止失败")
+                    .setMessage("无法通过 root 命令停止目标应用。\n\n请在系统设置中手动「强制停止」。\n\n已尝试: " + result.toString())
                     .setPositiveButton("前往设置", new android.content.DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(android.content.DialogInterface dialog, int which) {
@@ -1257,19 +1281,14 @@ public class MainActivity extends Activity {
                                 intent.setData(Uri.parse("package:" + TARGET_PACKAGE));
                                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                                 startActivity(intent);
-                                Toast.makeText(MainActivity.this, "请在系统设置中点「强制停止」",
-                                        Toast.LENGTH_LONG).show();
                             } catch (Throwable t) {
-                                Toast.makeText(MainActivity.this, "无法打开设置: " + t.getMessage(),
-                                        Toast.LENGTH_SHORT).show();
+                                Toast.makeText(MainActivity.this,
+                                        "无法打开设置: " + t.getMessage(), Toast.LENGTH_SHORT).show();
                             }
                         }
                     })
-                    .setNegativeButton("我知道了", null)
+                    .setNegativeButton("关闭", null)
                     .show();
-        } else {
-            Toast.makeText(this, "已强制停止目标应用，可点击「启动目标应用」重新进入",
-                    Toast.LENGTH_LONG).show();
         }
     }
 
@@ -1281,38 +1300,38 @@ public class MainActivity extends Activity {
     }
 
     private boolean isPackageRunning(String pkg) {
-        // 策略 1: 检查 last_hook_time 是否在 5 分钟内（有活动即视为运行中）
+        // 策略 1: 真实进程检测（最高优先级）— shell pidof（无需 root 也可见其他 app 进程）
         try {
-            android.content.SharedPreferences sp = getSharedPreferences("module_stats", MODE_PRIVATE);
-            long lastTime = sp.getLong("last_hook_time", 0);
-            if (lastTime > 0 && System.currentTimeMillis() - lastTime < 5 * 60 * 1000) {
+            Process p = Runtime.getRuntime().exec("pidof " + pkg);
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(p.getInputStream()));
+            String line = reader.readLine();
+            reader.close();
+            p.waitFor();
+            if (line != null && line.trim().length() > 0) {
+                // 有进程 ID 存在 → 包确实在运行
                 return true;
             }
         } catch (Throwable ignored) {}
 
-        // 策略 2: shell "pidof" 命令（在多数设备上无需 root 即可检查自己可见的进程）
+        // 策略 2: shell pgrep（pidof 在某些系统上可能不可用，pgrep 更通用）
         try {
+            Process p = Runtime.getRuntime().exec("pgrep -f " + pkg);
             java.io.BufferedReader reader = new java.io.BufferedReader(
-                new java.io.InputStreamReader(Runtime.getRuntime().exec("pidof " + pkg).getInputStream()));
+                    new java.io.InputStreamReader(p.getInputStream()));
             String line = reader.readLine();
             reader.close();
-            if (line != null && line.trim().length() > 0) return true;
+            p.waitFor();
+            if (line != null && line.trim().length() > 0) {
+                return true;
+            }
         } catch (Throwable ignored) {}
 
-        // 策略 3: shell "pgrep" 命令
-        try {
-            java.io.BufferedReader reader = new java.io.BufferedReader(
-                new java.io.InputStreamReader(Runtime.getRuntime().exec("pgrep -f " + pkg).getInputStream()));
-            String line = reader.readLine();
-            reader.close();
-            if (line != null && line.trim().length() > 0) return true;
-        } catch (Throwable ignored) {}
-
-        // 策略 4: 传统的 getRunningAppProcesses（Android 5.1+ 对第三方应用受限，但某些系统版本仍可用）
+        // 策略 3: Android API — getRunningAppProcesses（Android 5.1+ 对第三方应用受限，但作为兜底）
         try {
             ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
             if (am != null) {
-                List<ActivityManager.RunningAppProcessInfo> list = am.getRunningAppProcesses();
+                java.util.List<ActivityManager.RunningAppProcessInfo> list = am.getRunningAppProcesses();
                 if (list != null) {
                     for (ActivityManager.RunningAppProcessInfo info : list) {
                         if (pkg.equals(info.processName)) return true;
@@ -1322,19 +1341,19 @@ public class MainActivity extends Activity {
             }
         } catch (Throwable ignored) {}
 
-        // 策略 5: getRunningServices（部分系统版本可用）
+        // 策略 4: last_hook_time 作为辅助证据（仅 30 秒内且进程检测失败时才判断）
+        // 注意：如果用户强制停止了目标应用，这里不会误判，因为策略 1/2 会检测到进程已死
+        // 本策略仅用于 pidof/pgrep 在某些设备上因权限不可用时的兜底
         try {
-            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            if (am != null) {
-                List<ActivityManager.RunningServiceInfo> services = am.getRunningServices(200);
-                if (services != null) {
-                    for (ActivityManager.RunningServiceInfo si : services) {
-                        if (si.service != null && pkg.equals(si.service.getPackageName())) return true;
-                    }
-                }
+            android.content.SharedPreferences sp = getSharedPreferences("module_stats", MODE_PRIVATE);
+            long lastTime = sp.getLong("last_hook_time", 0);
+            if (lastTime > 0 && System.currentTimeMillis() - lastTime < 30 * 1000) {
+                // 30 秒内有活动 → 认为可能仍在运行，但只做弱判断
+                return true;
             }
         } catch (Throwable ignored) {}
 
+        // 所有策略都没检测到 → 未运行
         return false;
     }
 

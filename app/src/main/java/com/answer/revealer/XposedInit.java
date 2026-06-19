@@ -111,11 +111,63 @@ public class XposedInit implements IXposedHookLoadPackage {
         // 非目标包跳过
         if (!TARGET_PACKAGE.equals(lpparam.packageName)) return;
 
-        // 防止重复初始化（同一个包多次回调）同一个 classloader
-        // 但即使已经初始化过，也要把 hook_installed_count 写回 ContentProvider，
-        // 避免"清空数据 → 继续使用"后统计值丢失
-        if (!initializedPackages.add(TARGET_PACKAGE)) {
-            // 已经初始化过：只写统计数据，不重复 hook 方法
+        // 每次进入目标应用都执行统计写入（不做去重）
+        // initializedPackages 仅用于避免重复安装 hook 方法
+        if (initializedPackages.add(TARGET_PACKAGE)) {
+            // 首次初始化：安装 hook 方法
+            final ClassLoader cl = lpparam.classLoader;
+
+            // 获取 Context
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Context ctx = getAppContextFromActivityThread();
+                        if (ctx != null) appContext = ctx;
+                        XposedHelpers.findAndHookMethod(
+                                "android.app.Application", cl, "onCreate",
+                                new XC_MethodHook() {
+                                    @Override
+                                    protected void afterHookedMethod(MethodHookParam param) {
+                                        try {
+                                            Context c = (Context) param.thisObject;
+                                            if (appContext == null) appContext = c;
+                                        } catch (Throwable ignored) {}
+                                    }
+                                }
+                        );
+                        hookInstalledCount.incrementAndGet();
+                    } catch (Throwable ignored) {}
+                }
+            }).start();
+
+            // 安装网络 Hook
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        setupNetworkHooks(cl);
+                        int installed = hookInstalledCount.get();
+                        List<String> clients = scanHttpClients(cl);
+
+                        // 写入 ContentProvider
+                        writeStatsToProvider(PROVIDER_URI, installed, clients);
+
+                        // Toast 提示
+                        showToastSafe("✓ 答案模块已加载，共安装 " + installed + " 个 Hook");
+
+                        try {
+                            XposedBridge.log("[答案模块] Hook 安装完成，共 " + installed + " 个");
+                        } catch (Throwable ignored) {}
+                    } catch (Throwable t) {
+                        try {
+                            XposedBridge.log("[答案模块] 初始化错误: " + t.getMessage());
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            }).start();
+        } else {
+            // 已初始化过：只做一次完整统计写入（确保数据刷新）
             new Thread(new Runnable() {
                 @Override
                 public void run() {
@@ -127,67 +179,19 @@ public class XposedInit implements IXposedHookLoadPackage {
                         values.put("module_active_v1", true);
                         values.put("last_hook_time", System.currentTimeMillis());
                         ctx.getContentResolver().update(PROVIDER_URI, values, null, null);
+
+                        // fallback：目标应用自己的 SP
+                        android.content.SharedPreferences sp = ctx.getSharedPreferences(
+                                "answer_revealer_status",
+                                Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
+                        sp.edit().putInt("hook_installed_count", hookInstalledCount.get())
+                                .putBoolean("module_active_v1", true)
+                                .putLong("last_hook_time", System.currentTimeMillis())
+                                .apply();
                     } catch (Throwable ignored) {}
                 }
             }).start();
-            return;
         }
-
-        final ClassLoader cl = lpparam.classLoader;
-
-        // 获取 Context（两种方式，任一成功即可）
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    // 1. 从 ActivityThread 直接拿
-                    Context ctx = getAppContextFromActivityThread();
-                    if (ctx != null) appContext = ctx;
-
-                    // 2. Hook Application.onCreate 兜底
-                    XposedHelpers.findAndHookMethod(
-                            "android.app.Application", cl, "onCreate",
-                            new XC_MethodHook() {
-                                @Override
-                                protected void afterHookedMethod(MethodHookParam param) {
-                                    try {
-                                        Context c = (Context) param.thisObject;
-                                        if (appContext == null) appContext = c;
-                                    } catch (Throwable ignored) {}
-                                }
-                            }
-                    );
-                    hookInstalledCount.incrementAndGet();
-                } catch (Throwable ignored) {}
-            }
-        }).start();
-
-        // 安装网络 Hook
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    setupNetworkHooks(cl);
-                    int installed = hookInstalledCount.get();
-                    List<String> clients = scanHttpClients(cl);
-
-                    // 写入 ContentProvider
-                    writeStatsToProvider(PROVIDER_URI, installed, clients);
-
-                    // Toast 提示（只弹一次）
-                    showToastSafe("✓ 答案模块已加载，共安装 " + installed + " 个 Hook");
-
-                    try {
-                        XposedBridge.log("[答案模块] Hook 安装完成，共 " + installed + " 个，检测到 "
-                                + clients.size() + " 个 HTTP 客户端类");
-                    } catch (Throwable ignored) {}
-                } catch (Throwable t) {
-                    try {
-                        XposedBridge.log("[答案模块] 初始化错误: " + t.getMessage());
-                    } catch (Throwable ignored) {}
-                }
-            }
-        }).start();
     }
 
     // ============ 安装网络 Hook ============
@@ -720,57 +724,36 @@ public class XposedInit implements IXposedHookLoadPackage {
                     if (ctx == null) return;
                     ContentValues values = new ContentValues();
 
-                    // 最大值策略：先读 ContentProvider 中的当前值，
-                    // 只在当前值更大或存储值为 0 时才覆盖
-                    // 避免多进程时较小的值覆盖主进程较大的值
-                    int currentHookCount = hookInstalledCount.get();
-                    int storedHookCount = 0;
-                    Cursor c = null;
-                    try {
-                        c = ctx.getContentResolver().query(PROVIDER_URI, null, null, null, null);
-                        if (c != null && c.moveToFirst()) {
-                            do {
-                                String key = c.getString(c.getColumnIndex("key"));
-                                if ("hook_installed_count".equals(key)) {
-                                    storedHookCount = (int) c.getLong(c.getColumnIndex("value"));
-                                    break;
-                                }
-                            } while (c.moveToNext());
-                        }
-                    } catch (Throwable ignored) {
-                    } finally {
-                        if (c != null) try { c.close(); } catch (Throwable ignored2) {}
-                    }
-                    if (currentHookCount > storedHookCount || storedHookCount == 0) {
-                        values.put("hook_installed_count", currentHookCount);
-                    }
-
+                    // 直接写入当前进程 hook_installed_count（不在乎重复统计）
+                    values.put("hook_installed_count", hookInstalledCount.get());
                     values.put("module_active_v1", true);
                     values.put("target_hit_count", targetHitCounter.get());
                     values.put("request_count", requestCounter.get());
                     values.put("last_hook_time", System.currentTimeMillis());
-                    ctx.getContentResolver().update(PROVIDER_URI, values, null, null);
-                } catch (Throwable t) {
-                    // fallback: 目标应用自己的 SP（也用最大值策略）
-                    try {
-                        Context ctx2 = appContext != null ? appContext : getAppContextFromActivityThread();
-                        if (ctx2 != null) {
-                            android.content.SharedPreferences sp = ctx2.getSharedPreferences("answer_revealer_status",
-                                    Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
-                            int storedSp = sp.getInt("hook_installed_count", 0);
-                            int currentSp = hookInstalledCount.get();
-                            android.content.SharedPreferences.Editor editor = sp.edit();
-                            if (currentSp > storedSp || storedSp == 0) {
-                                editor.putInt("hook_installed_count", currentSp);
-                            }
-                            editor.putBoolean("module_active_v1", true);
-                            editor.putInt("target_hit_count", targetHitCounter.get());
-                            editor.putInt("request_count", requestCounter.get());
-                            editor.putLong("last_hook_time", System.currentTimeMillis());
-                            editor.apply();
+
+                    // 重试 2 次，提高成功率
+                    for (int attempt = 0; attempt < 3; attempt++) {
+                        try {
+                            ctx.getContentResolver().update(PROVIDER_URI, values, null, null);
+                            return;
+                        } catch (Throwable ignored) {
+                            try { Thread.sleep(150); } catch (Throwable ignored2) {}
                         }
+                    }
+
+                    // ContentProvider 失败 → fallback 写入目标应用自己的 SP
+                    try {
+                        android.content.SharedPreferences sp = ctx.getSharedPreferences(
+                                "answer_revealer_status",
+                                Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
+                        sp.edit().putInt("hook_installed_count", hookInstalledCount.get())
+                                .putBoolean("module_active_v1", true)
+                                .putInt("target_hit_count", targetHitCounter.get())
+                                .putInt("request_count", requestCounter.get())
+                                .putLong("last_hook_time", System.currentTimeMillis())
+                                .apply();
                     } catch (Throwable ignored) {}
-                }
+                } catch (Throwable ignored) {}
             }
         }).start();
     }
