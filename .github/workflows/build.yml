@@ -26,13 +26,16 @@ jobs:
           touch local.properties
           echo "sdk.dir=$ANDROID_HOME" >> local.properties
 
+      - name: Download Gradle
+        run: |
+          mkdir -p gradle/wrapper
+          curl -sL https://services.gradle.org/distributions/gradle-8.4-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+          echo "/tmp/gradle-8.4/bin/gradle" > gradle-bin
+          chmod +x gradle-bin
+
       - name: Build debug APK
-        uses: gradle/gradle-build-action@v2
-        with:
-          arguments: assembleDebug
-          cache-dependency-path: |
-            **/*.gradle*
-            **/gradle-wrapper.properties
+        run: /tmp/gradle-8.4/bin/gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
