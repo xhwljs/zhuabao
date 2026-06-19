@@ -111,8 +111,27 @@ public class XposedInit implements IXposedHookLoadPackage {
         // 非目标包跳过
         if (!TARGET_PACKAGE.equals(lpparam.packageName)) return;
 
-        // 防止重复初始化（同一个包多次回调）
-        if (!initializedPackages.add(TARGET_PACKAGE)) return;
+        // 防止重复初始化（同一个包多次回调）同一个 classloader
+        // 但即使已经初始化过，也要把 hook_installed_count 写回 ContentProvider，
+        // 避免"清空数据 → 继续使用"后统计值丢失
+        if (!initializedPackages.add(TARGET_PACKAGE)) {
+            // 已经初始化过：只写统计数据，不重复 hook 方法
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
+                        if (ctx == null) return;
+                        ContentValues values = new ContentValues();
+                        values.put("hook_installed_count", hookInstalledCount.get());
+                        values.put("module_active_v1", true);
+                        values.put("last_hook_time", System.currentTimeMillis());
+                        ctx.getContentResolver().update(PROVIDER_URI, values, null, null);
+                    } catch (Throwable ignored) {}
+                }
+            }).start();
+            return;
+        }
 
         final ClassLoader cl = lpparam.classLoader;
 
@@ -700,25 +719,55 @@ public class XposedInit implements IXposedHookLoadPackage {
                     Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
                     if (ctx == null) return;
                     ContentValues values = new ContentValues();
-                    // 注意：这里不写入 hook_installed_count，避免多进程覆盖主进程的正确值
-                    // hook_installed_count 只在初始化时的 writeStatsToProvider 中写入一次
+
+                    // 最大值策略：先读 ContentProvider 中的当前值，
+                    // 只在当前值更大或存储值为 0 时才覆盖
+                    // 避免多进程时较小的值覆盖主进程较大的值
+                    int currentHookCount = hookInstalledCount.get();
+                    int storedHookCount = 0;
+                    Cursor c = null;
+                    try {
+                        c = ctx.getContentResolver().query(PROVIDER_URI, null, null, null, null);
+                        if (c != null && c.moveToFirst()) {
+                            do {
+                                String key = c.getString(c.getColumnIndex("key"));
+                                if ("hook_installed_count".equals(key)) {
+                                    storedHookCount = (int) c.getLong(c.getColumnIndex("value"));
+                                    break;
+                                }
+                            } while (c.moveToNext());
+                        }
+                    } catch (Throwable ignored) {
+                    } finally {
+                        if (c != null) try { c.close(); } catch (Throwable ignored2) {}
+                    }
+                    if (currentHookCount > storedHookCount || storedHookCount == 0) {
+                        values.put("hook_installed_count", currentHookCount);
+                    }
+
                     values.put("module_active_v1", true);
                     values.put("target_hit_count", targetHitCounter.get());
                     values.put("request_count", requestCounter.get());
                     values.put("last_hook_time", System.currentTimeMillis());
                     ctx.getContentResolver().update(PROVIDER_URI, values, null, null);
                 } catch (Throwable t) {
-                    // fallback: 目标应用自己的 SP
+                    // fallback: 目标应用自己的 SP（也用最大值策略）
                     try {
-                        Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
-                        if (ctx != null) {
-                            android.content.SharedPreferences sp = ctx.getSharedPreferences("answer_revealer_status",
+                        Context ctx2 = appContext != null ? appContext : getAppContextFromActivityThread();
+                        if (ctx2 != null) {
+                            android.content.SharedPreferences sp = ctx2.getSharedPreferences("answer_revealer_status",
                                     Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
-                            sp.edit().putBoolean("module_active_v1", true)
-                                    .putInt("target_hit_count", targetHitCounter.get())
-                                    .putInt("request_count", requestCounter.get())
-                                    .putLong("last_hook_time", System.currentTimeMillis())
-                                    .apply();
+                            int storedSp = sp.getInt("hook_installed_count", 0);
+                            int currentSp = hookInstalledCount.get();
+                            android.content.SharedPreferences.Editor editor = sp.edit();
+                            if (currentSp > storedSp || storedSp == 0) {
+                                editor.putInt("hook_installed_count", currentSp);
+                            }
+                            editor.putBoolean("module_active_v1", true);
+                            editor.putInt("target_hit_count", targetHitCounter.get());
+                            editor.putInt("request_count", requestCounter.get());
+                            editor.putLong("last_hook_time", System.currentTimeMillis());
+                            editor.apply();
                         }
                     } catch (Throwable ignored) {}
                 }

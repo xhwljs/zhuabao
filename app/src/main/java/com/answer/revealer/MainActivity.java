@@ -1180,14 +1180,97 @@ public class MainActivity extends Activity {
     }
 
     private void killTargetProcess() {
+        final StringBuilder result = new StringBuilder();
+
+        // 策略 1: killBackgroundProcesses（系统 API，无需 root，只能杀后台缓存进程）
         try {
             ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            if (am != null) am.killBackgroundProcesses(TARGET_PACKAGE);
+            if (am != null) {
+                am.killBackgroundProcesses(TARGET_PACKAGE);
+                result.append("[killBackground] ");
+            }
         } catch (Throwable ignored) {}
+
+        // 策略 2: shell "am kill" 命令（与 API 等效，无需 root，杀后台进程）
         try {
-            Runtime.getRuntime().exec("killall " + TARGET_PACKAGE);
+            Process p = Runtime.getRuntime().exec("am kill " + TARGET_PACKAGE);
+            p.waitFor();
+            result.append("[am kill] ");
         } catch (Throwable ignored) {}
-        Toast.makeText(this, "已发送 kill 命令，请再次启动目标应用", Toast.LENGTH_SHORT).show();
+
+        // 策略 3: shell "killall" + "kill -9 PID"（无需 root 只能杀自己的进程）
+        try {
+            // 先尝试 killall
+            Runtime.getRuntime().exec("killall " + TARGET_PACKAGE);
+            result.append("[killall] ");
+        } catch (Throwable ignored) {}
+
+        // 策略 4: 通过 pidof 找到 PID，然后 kill -9
+        try {
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(Runtime.getRuntime().exec("pidof " + TARGET_PACKAGE).getInputStream()));
+            String pidLine = reader.readLine();
+            reader.close();
+            if (pidLine != null && pidLine.trim().length() > 0) {
+                for (String pid : pidLine.trim().split(" ")) {
+                    if (pid.length() > 0) {
+                        try {
+                            Runtime.getRuntime().exec("kill -9 " + pid);
+                            result.append("[kill-9:" + pid + "] ");
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        // 策略 5: 尝试 am force-stop（需要系统签名或 root，多数普通 app 无法使用）
+        boolean forceStopSuccess = false;
+        try {
+            Process p = Runtime.getRuntime().exec("am force-stop " + TARGET_PACKAGE);
+            int exitCode = p.waitFor();
+            if (exitCode == 0) {
+                forceStopSuccess = true;
+                result.append("[force-stop ✓] ");
+            } else {
+                result.append("[force-stop ✗] ");
+            }
+        } catch (Throwable ignored) {
+            result.append("[force-stop ✗] ");
+        }
+
+        // 策略 6: 如果 am force-stop 失败（最常见的情况），跳转到应用信息页面让用户手动点「强制停止」
+        final boolean needUserAction = !forceStopSuccess;
+        if (needUserAction) {
+            // 弹窗提示并跳转应用信息页
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("强制停止目标应用")
+                    .setMessage("当前应用无系统权限直接停止「" + TARGET_PACKAGE + "」。\n\n"
+                            + "请点击下方「前往设置」按钮，在系统应用信息页点击「强制停止」或「停止」。\n\n"
+                            + "停止后回到本应用点击「启动目标应用」重新进入答题页面。\n\n"
+                            + "已尝试的操作：" + result.toString())
+                    .setPositiveButton("前往设置", new android.content.DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(android.content.DialogInterface dialog, int which) {
+                            try {
+                                Intent intent = new Intent(
+                                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                                intent.setData(Uri.parse("package:" + TARGET_PACKAGE));
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                startActivity(intent);
+                                Toast.makeText(MainActivity.this, "请在系统设置中点「强制停止」",
+                                        Toast.LENGTH_LONG).show();
+                            } catch (Throwable t) {
+                                Toast.makeText(MainActivity.this, "无法打开设置: " + t.getMessage(),
+                                        Toast.LENGTH_SHORT).show();
+                            }
+                        }
+                    })
+                    .setNegativeButton("我知道了", null)
+                    .show();
+        } else {
+            Toast.makeText(this, "已强制停止目标应用，可点击「启动目标应用」重新进入",
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
     private boolean isPackageInstalled(String pkg) {
@@ -1198,16 +1281,60 @@ public class MainActivity extends Activity {
     }
 
     private boolean isPackageRunning(String pkg) {
+        // 策略 1: 检查 last_hook_time 是否在 5 分钟内（有活动即视为运行中）
         try {
-            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            if (am == null) return false;
-            List<ActivityManager.RunningAppProcessInfo> list = am.getRunningAppProcesses();
-            if (list == null) return false;
-            for (ActivityManager.RunningAppProcessInfo info : list) {
-                if (pkg.equals(info.processName)) return true;
-                if (info.processName != null && info.processName.startsWith(pkg + ":")) return true;
+            android.content.SharedPreferences sp = getSharedPreferences("module_stats", MODE_PRIVATE);
+            long lastTime = sp.getLong("last_hook_time", 0);
+            if (lastTime > 0 && System.currentTimeMillis() - lastTime < 5 * 60 * 1000) {
+                return true;
             }
         } catch (Throwable ignored) {}
+
+        // 策略 2: shell "pidof" 命令（在多数设备上无需 root 即可检查自己可见的进程）
+        try {
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(Runtime.getRuntime().exec("pidof " + pkg).getInputStream()));
+            String line = reader.readLine();
+            reader.close();
+            if (line != null && line.trim().length() > 0) return true;
+        } catch (Throwable ignored) {}
+
+        // 策略 3: shell "pgrep" 命令
+        try {
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(Runtime.getRuntime().exec("pgrep -f " + pkg).getInputStream()));
+            String line = reader.readLine();
+            reader.close();
+            if (line != null && line.trim().length() > 0) return true;
+        } catch (Throwable ignored) {}
+
+        // 策略 4: 传统的 getRunningAppProcesses（Android 5.1+ 对第三方应用受限，但某些系统版本仍可用）
+        try {
+            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            if (am != null) {
+                List<ActivityManager.RunningAppProcessInfo> list = am.getRunningAppProcesses();
+                if (list != null) {
+                    for (ActivityManager.RunningAppProcessInfo info : list) {
+                        if (pkg.equals(info.processName)) return true;
+                        if (info.processName != null && info.processName.startsWith(pkg + ":")) return true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        // 策略 5: getRunningServices（部分系统版本可用）
+        try {
+            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            if (am != null) {
+                List<ActivityManager.RunningServiceInfo> services = am.getRunningServices(200);
+                if (services != null) {
+                    for (ActivityManager.RunningServiceInfo si : services) {
+                        if (si.service != null && pkg.equals(si.service.getPackageName())) return true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
         return false;
     }
 
