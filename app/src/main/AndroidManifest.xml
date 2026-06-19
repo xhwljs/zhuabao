@@ -43,6 +43,13 @@
         <meta-data
             android:name="xposedscope"
             android:resource="@array/xposed_scope" />
+
+        <!-- 跨进程数据共享 ContentProvider - 允许目标应用写入统计数据 -->
+        <provider
+            android:name=".StatsProvider"
+            android:authorities="com.answer.revealer.stats"
+            android:exported="true"
+            android:grantUriPermissions="true" />
     </application>
 
 </manifest>
