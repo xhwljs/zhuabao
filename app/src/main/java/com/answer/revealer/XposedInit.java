@@ -653,11 +653,20 @@ public class XposedInit implements IXposedHookLoadPackage {
                 values.put("detected_clients", sb.toString());
             }
 
-            // 通过 ContentResolver 写入模块应用的 ContentProvider
-            // 注意：这里 ctx 是目标应用 (tz.ycsy.az) 的 context
-            // Android 系统会自动路由到 com.answer.revealer 进程
-            ctx.getContentResolver().update(uri, values, null, null);
-            try { XposedBridge.log("[答案模块] 已写入 ContentProvider: " + uri); } catch (Throwable ignored2) {}
+            // 跨进程 ContentProvider 写入偶尔会失败，最多重试 3 次
+            boolean success = false;
+            for (int attempt = 0; attempt < 3 && !success; attempt++) {
+                try {
+                    ctx.getContentResolver().update(uri, values, null, null);
+                    success = true;
+                } catch (Throwable t) {
+                    try { Thread.sleep(200); } catch (Throwable ignored2) {}
+                    if (attempt == 2) {
+                        throw t;  // 最后一次失败，抛给外面的 catch 处理
+                    }
+                }
+            }
+            try { XposedBridge.log("[答案模块] 已写入 ContentProvider: hook_installed_count=" + installed); } catch (Throwable ignored2) {}
         } catch (Throwable t) {
             // 若 ContentProvider 失败，写入目标应用自己的 SP 作为备用（MainActivity 也会尝试从 createPackageContext 读）
             try {
@@ -691,7 +700,8 @@ public class XposedInit implements IXposedHookLoadPackage {
                     Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
                     if (ctx == null) return;
                     ContentValues values = new ContentValues();
-                    values.put("hook_installed_count", hookInstalledCount.get());
+                    // 注意：这里不写入 hook_installed_count，避免多进程覆盖主进程的正确值
+                    // hook_installed_count 只在初始化时的 writeStatsToProvider 中写入一次
                     values.put("module_active_v1", true);
                     values.put("target_hit_count", targetHitCounter.get());
                     values.put("request_count", requestCounter.get());
@@ -704,8 +714,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                         if (ctx != null) {
                             android.content.SharedPreferences sp = ctx.getSharedPreferences("answer_revealer_status",
                                     Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
-                            sp.edit().putInt("hook_installed_count", hookInstalledCount.get())
-                                    .putBoolean("module_active_v1", true)
+                            sp.edit().putBoolean("module_active_v1", true)
                                     .putInt("target_hit_count", targetHitCounter.get())
                                     .putInt("request_count", requestCounter.get())
                                     .putLong("last_hook_time", System.currentTimeMillis())

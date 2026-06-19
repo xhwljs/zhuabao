@@ -62,6 +62,10 @@ public class StatsProvider extends ContentProvider {
             KEY_PKG_HOOKED
     };
 
+    // 目标应用包名 - 用于 fallback 读取其 SP
+    private static final String TARGET_PACKAGE = "tz.ycsy.az";
+    private static final String TARGET_SP_NAME = "answer_revealer_status";
+
     // 进程内缓存（ContentProvider 可能在调用者进程，也可能在自身进程）
     // 主要依赖 SP 持久化，cache 仅用于快速判断
     private static final ConcurrentHashMap<String, Long> sCachedCounts = new ConcurrentHashMap<>();
@@ -71,11 +75,8 @@ public class StatsProvider extends ContentProvider {
     @Override
     public boolean onCreate() {
         try {
-            // 注意：这里用 Context.MODE_WORLD_READABLE 会被较新的系统拒绝
-            // 但 ContentProvider 本身就允许跨进程，所以直接用默认的 MODE_PRIVATE 即可
-            // 因为 ContentProvider.onCreate() 在提供者进程执行，读写的是自己包名的 SP
             mSP = getContext().getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
-            Log.d(TAG, "StatsProvider created");
+            Log.d(TAG, "StatsProvider created, package=" + getContext().getPackageName());
             return true;
         } catch (Throwable t) {
             Log.e(TAG, "onCreate error: " + t.getMessage());
@@ -86,7 +87,8 @@ public class StatsProvider extends ContentProvider {
     @Override
     public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
         try {
-            SharedPreferences sp = ensureSP();
+            // 每次查询强制重新获取 SP，确保读到最新值
+            SharedPreferences sp = getContext().getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
             if (sp == null) return emptyCursor();
 
             // 读取所有键值
@@ -132,6 +134,32 @@ public class StatsProvider extends ContentProvider {
             }
 
             // 默认：返回主要统计
+            // === 关键修复：如果自己的 SP 没有 hook_installed_count，尝试从目标应用的 SP 读取并同步
+            // 这是双保险：ContentProvider 写入失败时 XposedInit 会写入目标应用的 SP
+            try {
+                long selfHookInstalled = sp.getLong(KEY_HOOK_INSTALLED, 0);
+                if (selfHookInstalled == 0) {
+                    Context targetCtx = getContext().createPackageContext(TARGET_PACKAGE,
+                            Context.CONTEXT_IGNORE_SECURITY | Context.CONTEXT_INCLUDE_CODE);
+                    SharedPreferences targetSp = targetCtx.getSharedPreferences(TARGET_SP_NAME,
+                            Context.MODE_MULTI_PROCESS | Context.MODE_PRIVATE);
+                    int hookInstalled = targetSp.getInt(KEY_HOOK_INSTALLED, 0);
+                    if (hookInstalled > 0) {
+                        SharedPreferences.Editor editor = sp.edit();
+                        editor.putLong(KEY_HOOK_INSTALLED, (long) hookInstalled);
+                        editor.putLong(KEY_TARGET_HIT_COUNT, (long) targetSp.getInt(KEY_TARGET_HIT_COUNT, 0));
+                        editor.putLong(KEY_REQUEST_COUNT, (long) targetSp.getInt(KEY_REQUEST_COUNT, 0));
+                        editor.putLong(KEY_LAST_TIME, targetSp.getLong(KEY_LAST_TIME, 0));
+                        String clients = targetSp.getString(KEY_DETECTED_CLIENTS, "");
+                        if (clients != null && !clients.isEmpty()) {
+                            editor.putString(KEY_DETECTED_CLIENTS, clients);
+                        }
+                        editor.apply();
+                        Log.d(TAG, "从目标应用 SP 同步数据到模块 SP: hook_installed=" + hookInstalled);
+                    }
+                }
+            } catch (Throwable ignored) {}
+
             String[] columns = {"key", "value", "value_str"};
             cursor = new MatrixCursor(columns);
 
@@ -147,6 +175,7 @@ public class StatsProvider extends ContentProvider {
                     cursor.newRow().add(key).add(v).add(String.valueOf(v));
                 }
             }
+
             return cursor;
         } catch (Throwable t) {
             Log.e(TAG, "query error: " + t.getMessage());
@@ -163,7 +192,7 @@ public class StatsProvider extends ContentProvider {
     public Uri insert(Uri uri, ContentValues values) {
         try {
             String path = uri.getLastPathSegment();
-            SharedPreferences sp = ensureSP();
+            SharedPreferences sp = getContext().getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
             if (sp == null) return null;
 
             if ("request".equals(path)) {
@@ -183,14 +212,13 @@ public class StatsProvider extends ContentProvider {
                 editor.putLong(KEY_LAST_TIME, System.currentTimeMillis());
                 editor.apply();
 
-                // 通知监听者
-                getContext().getContentResolver().notifyChange(URI_QUERY, null);
+                try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
                 return uri;
             }
 
             // 通用插入
             writeValues(sp, values);
-            getContext().getContentResolver().notifyChange(URI_QUERY, null);
+            try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
             return uri;
         } catch (Throwable t) {
             Log.e(TAG, "insert error: " + t.getMessage());
@@ -202,14 +230,14 @@ public class StatsProvider extends ContentProvider {
     public int delete(Uri uri, String selection, String[] selectionArgs) {
         try {
             String path = uri.getLastPathSegment();
-            SharedPreferences sp = ensureSP();
+            SharedPreferences sp = getContext().getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
             if (sp == null) return 0;
 
             if ("clear".equals(path)) {
                 // 清空全部
                 int count = sp.getAll().size();
                 sp.edit().clear().apply();
-                getContext().getContentResolver().notifyChange(URI_QUERY, null);
+                try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
                 return count;
             }
 
@@ -218,7 +246,7 @@ public class StatsProvider extends ContentProvider {
                     && selectionArgs != null && selectionArgs.length > 0) {
                 if (sp.contains(selectionArgs[0])) {
                     sp.edit().remove(selectionArgs[0]).apply();
-                    getContext().getContentResolver().notifyChange(URI_QUERY, null);
+                    try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
                     return 1;
                 }
             }
@@ -232,10 +260,13 @@ public class StatsProvider extends ContentProvider {
     @Override
     public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs) {
         try {
-            SharedPreferences sp = ensureSP();
+            SharedPreferences sp = getContext().getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
             if (sp == null) return 0;
             int updated = writeValues(sp, values);
-            getContext().getContentResolver().notifyChange(URI_QUERY, null);
+            if (updated > 0) {
+                try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
+            }
+            Log.d(TAG, "update: keys=" + values.keySet() + ", updated=" + updated);
             return updated;
         } catch (Throwable t) {
             Log.e(TAG, "update error: " + t.getMessage());
