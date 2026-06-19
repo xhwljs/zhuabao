@@ -5,17 +5,16 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.Html;
 import android.text.method.ScrollingMovementMethod;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
-import java.lang.reflect.Method;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
@@ -71,7 +70,7 @@ public class XposedInit implements IXposedHookLoadPackage {
 
         targetClassLoader = lpparam.classLoader;
 
-        // 记录 Application 上下文，用于弹 dialog
+        // 记录 Application 上下文，用于弹 dialog 和 Toast
         XposedHelpers.findAndHookMethod(
                 "android.app.Application",
                 lpparam.classLoader,
@@ -82,8 +81,14 @@ public class XposedInit implements IXposedHookLoadPackage {
                         appContext = (Context) param.thisObject;
                         try {
                             SharedPreferences sp = appContext.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
+                            boolean firstTime = !sp.getBoolean(SP_KEY_ACTIVE, false);
                             sp.edit().putBoolean(SP_KEY_ACTIVE, true)
                                     .putLong(SP_KEY_LAST, System.currentTimeMillis()).commit();
+
+                            // 首次 hook 时显示 Toast 提示
+                            if (firstTime) {
+                                showModuleStartedToast(appContext);
+                            }
                         } catch (Throwable ignored) {
                         }
                     }
@@ -408,6 +413,19 @@ public class XposedInit implements IXposedHookLoadPackage {
         } catch (Throwable t) {
             return bodyStr;
         }
+    }
+
+    private void showModuleStartedToast(final Context ctx) {
+        if (ctx == null) return;
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Toast.makeText(ctx, "答案显示模块已生效，正在监控 tz.ycsy.az", Toast.LENGTH_LONG).show();
+                } catch (Throwable ignored) {
+                }
+            }
+        });
     }
 
     private void showDialog(final String url, final String originalBody, final String modifiedBody) {
