@@ -69,7 +69,6 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static final java.util.Set<String> initializedPackages =
             Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 
-    private static final AtomicInteger hookInstalledCount = new AtomicInteger(0);
     private static final AtomicInteger requestCounter = new AtomicInteger(0);
     private static final AtomicInteger targetHitCounter = new AtomicInteger(0);
 
@@ -136,7 +135,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     }
                                 }
                         );
-                        hookInstalledCount.incrementAndGet();
                     } catch (Throwable ignored) {}
                 }
             }).start();
@@ -147,17 +145,16 @@ public class XposedInit implements IXposedHookLoadPackage {
                 public void run() {
                     try {
                         setupNetworkHooks(cl);
-                        int installed = hookInstalledCount.get();
                         List<String> clients = scanHttpClients(cl);
 
-                        // 写入 ContentProvider
-                        writeStatsToProvider(PROVIDER_URI, installed, clients);
+                        // 写入 ContentProvider（不再写 hook 安装数量
+                        writeStatsToProvider(PROVIDER_URI, clients);
 
                         // Toast 提示
-                        showToastSafe("✓ 答案模块已加载，共安装 " + installed + " 个 Hook");
+                        showToastSafe("✓ 答案模块已加载");
 
                         try {
-                            XposedBridge.log("[答案模块] Hook 安装完成，共 " + installed + " 个");
+                            XposedBridge.log("[答案模块] Hook 安装完成");
                         } catch (Throwable ignored) {}
                     } catch (Throwable t) {
                         try {
@@ -175,19 +172,9 @@ public class XposedInit implements IXposedHookLoadPackage {
                         Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
                         if (ctx == null) return;
                         ContentValues values = new ContentValues();
-                        values.put("hook_installed_count", hookInstalledCount.get());
                         values.put("module_active_v1", true);
                         values.put("last_hook_time", System.currentTimeMillis());
                         ctx.getContentResolver().update(PROVIDER_URI, values, null, null);
-
-                        // fallback：目标应用自己的 SP
-                        android.content.SharedPreferences sp = ctx.getSharedPreferences(
-                                "answer_revealer_status",
-                                Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
-                        sp.edit().putInt("hook_installed_count", hookInstalledCount.get())
-                                .putBoolean("module_active_v1", true)
-                                .putLong("last_hook_time", System.currentTimeMillis())
-                                .apply();
                     } catch (Throwable ignored) {}
                 }
             }).start();
@@ -213,7 +200,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 }
                             }
                     );
-                    hookInstalledCount.incrementAndGet();
                 } catch (Throwable ignored) {}
             }
 
@@ -229,7 +215,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                             }
                         }
                 );
-                hookInstalledCount.incrementAndGet();
             } catch (Throwable ignored) {}
         }
 
@@ -267,7 +252,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                         }
                     }
             );
-            hookInstalledCount.incrementAndGet();
         } catch (Throwable ignored) {}
 
         // === 3. WebView: shouldInterceptRequest (目标是检测 getQuestion API 并替换响应) ===
@@ -354,7 +338,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                         }
                     }
             );
-            hookInstalledCount.incrementAndGet();
         } catch (Throwable ignored) {
             try { XposedBridge.log("[答案模块] WebView shouldInterceptRequest hook 失败: " + ignored.getMessage()); } catch (Throwable ignored2) {}
         }
@@ -414,7 +397,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                         }
                     }
             );
-            hookInstalledCount.incrementAndGet();
         } catch (Throwable ignored) {}
 
         // === 5. 腾讯 X5 WebView ===
@@ -485,7 +467,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                         }
                     }
             );
-            hookInstalledCount.incrementAndGet();
         } catch (Throwable ignored) {}
     }
 
@@ -656,19 +637,17 @@ public class XposedInit implements IXposedHookLoadPackage {
     }
 
     // ============ 写入 ContentProvider ============
-    private static void writeStatsToProvider(Uri uri, int installed, List<String> clients) {
+    private static void writeStatsToProvider(Uri uri, List<String> clients) {
         try {
             Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
-            if (ctx == null) {
-                try { XposedBridge.log("[答案模块] 无Context，无法写入 ContentProvider"); } catch (Throwable ignored2) {}
-                return;
-            }
+            if (ctx == null) return;
 
             ContentValues values = new ContentValues();
-            values.put("hook_installed_count", installed);
             values.put("module_active_v1", true);
             values.put("last_hook_time", System.currentTimeMillis());
             values.put("package_hooked", TARGET_PACKAGE);
+            values.put("target_hit_count", targetHitCounter.get());
+            values.put("request_count", requestCounter.get());
 
             if (clients != null && !clients.isEmpty()) {
                 StringBuilder sb = new StringBuilder();
@@ -685,20 +664,18 @@ public class XposedInit implements IXposedHookLoadPackage {
                 } catch (Throwable t) {
                     try { Thread.sleep(200); } catch (Throwable ignored2) {}
                     if (attempt == 2) {
-                        throw t;  // 最后一次失败，抛给外面的 catch 处理
+                        throw t;
                     }
                 }
             }
-            try { XposedBridge.log("[答案模块] 已写入 ContentProvider: hook_installed_count=" + installed); } catch (Throwable ignored2) {}
         } catch (Throwable t) {
-            // 若 ContentProvider 失败，写入目标应用自己的 SP 作为备用（MainActivity 也会尝试从 createPackageContext 读）
+            // 若 ContentProvider 失败，写入目标应用自己的 SP 作为备用
             try {
                 Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
                 if (ctx != null) {
                     android.content.SharedPreferences sp = ctx.getSharedPreferences("answer_revealer_status",
                             Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
                     android.content.SharedPreferences.Editor editor = sp.edit();
-                    editor.putInt("hook_installed_count", installed);
                     editor.putBoolean("module_active_v1", true);
                     editor.putLong("last_hook_time", System.currentTimeMillis());
                     editor.putInt("target_hit_count", targetHitCounter.get());
@@ -711,7 +688,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                     editor.apply();
                 }
             } catch (Throwable ignored) {}
-            try { XposedBridge.log("[答案模块] ContentProvider 写入失败: " + t.getMessage() + "（已回退到目标应用SP）"); } catch (Throwable ignored2) {}
         }
     }
 
@@ -723,15 +699,12 @@ public class XposedInit implements IXposedHookLoadPackage {
                     Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
                     if (ctx == null) return;
                     ContentValues values = new ContentValues();
-
-                    // 直接写入当前进程 hook_installed_count（不在乎重复统计）
-                    values.put("hook_installed_count", hookInstalledCount.get());
                     values.put("module_active_v1", true);
                     values.put("target_hit_count", targetHitCounter.get());
                     values.put("request_count", requestCounter.get());
                     values.put("last_hook_time", System.currentTimeMillis());
 
-                    // 重试 2 次，提高成功率
+                    // 重试 2 次提高成功率
                     for (int attempt = 0; attempt < 3; attempt++) {
                         try {
                             ctx.getContentResolver().update(PROVIDER_URI, values, null, null);
@@ -746,8 +719,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                         android.content.SharedPreferences sp = ctx.getSharedPreferences(
                                 "answer_revealer_status",
                                 Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
-                        sp.edit().putInt("hook_installed_count", hookInstalledCount.get())
-                                .putBoolean("module_active_v1", true)
+                        sp.edit().putBoolean("module_active_v1", true)
                                 .putInt("target_hit_count", targetHitCounter.get())
                                 .putInt("request_count", requestCounter.get())
                                 .putLong("last_hook_time", System.currentTimeMillis())
@@ -802,7 +774,6 @@ public class XposedInit implements IXposedHookLoadPackage {
     }
 
     // ============ 暴露给外部读取（调试用） ============
-    public static int getHookInstalledCount() { return hookInstalledCount.get(); }
     public static int getTargetHitCount() { return targetHitCounter.get(); }
     public static int getRequestCount() { return requestCounter.get(); }
 }

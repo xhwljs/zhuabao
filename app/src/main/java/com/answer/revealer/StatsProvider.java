@@ -44,7 +44,6 @@ public class StatsProvider extends ContentProvider {
     private static final String TAG = "StatsProvider";
 
     // 列名
-    public static final String KEY_HOOK_INSTALLED = "hook_installed_count";
     public static final String KEY_REQUEST_COUNT = "request_count";
     public static final String KEY_TARGET_HIT_COUNT = "target_hit_count";
     public static final String KEY_LAST_TIME = "last_hook_time";
@@ -53,7 +52,6 @@ public class StatsProvider extends ContentProvider {
     public static final String KEY_PKG_HOOKED = "package_hooked";
 
     private static final String[] ALL_KEYS = {
-            KEY_HOOK_INSTALLED,
             KEY_REQUEST_COUNT,
             KEY_TARGET_HIT_COUNT,
             KEY_LAST_TIME,
@@ -134,28 +132,29 @@ public class StatsProvider extends ContentProvider {
             }
 
             // 默认：返回主要统计
-            // === 关键修复：如果自己的 SP 没有 hook_installed_count，尝试从目标应用的 SP 读取并同步
+            // === 如果自己的 SP 没有数据，尝试从目标应用的 SP 读取并同步
             // 这是双保险：ContentProvider 写入失败时 XposedInit 会写入目标应用的 SP
             try {
-                long selfHookInstalled = sp.getLong(KEY_HOOK_INSTALLED, 0);
-                if (selfHookInstalled == 0) {
+                long selfRequestCount = sp.getLong(KEY_REQUEST_COUNT, 0);
+                long selfTargetHitCount = sp.getLong(KEY_TARGET_HIT_COUNT, 0);
+                if (selfRequestCount == 0 && selfTargetHitCount == 0) {
                     Context targetCtx = getContext().createPackageContext(TARGET_PACKAGE,
                             Context.CONTEXT_IGNORE_SECURITY | Context.CONTEXT_INCLUDE_CODE);
                     SharedPreferences targetSp = targetCtx.getSharedPreferences(TARGET_SP_NAME,
                             Context.MODE_MULTI_PROCESS | Context.MODE_PRIVATE);
-                    int hookInstalled = targetSp.getInt(KEY_HOOK_INSTALLED, 0);
-                    if (hookInstalled > 0) {
+                    int requestCount = targetSp.getInt(KEY_REQUEST_COUNT, 0);
+                    int targetHitCount = targetSp.getInt(KEY_TARGET_HIT_COUNT, 0);
+                    if (requestCount > 0 || targetHitCount > 0) {
                         SharedPreferences.Editor editor = sp.edit();
-                        editor.putLong(KEY_HOOK_INSTALLED, (long) hookInstalled);
-                        editor.putLong(KEY_TARGET_HIT_COUNT, (long) targetSp.getInt(KEY_TARGET_HIT_COUNT, 0));
-                        editor.putLong(KEY_REQUEST_COUNT, (long) targetSp.getInt(KEY_REQUEST_COUNT, 0));
+                        editor.putLong(KEY_TARGET_HIT_COUNT, (long) targetHitCount);
+                        editor.putLong(KEY_REQUEST_COUNT, (long) requestCount);
                         editor.putLong(KEY_LAST_TIME, targetSp.getLong(KEY_LAST_TIME, 0));
                         String clients = targetSp.getString(KEY_DETECTED_CLIENTS, "");
                         if (clients != null && !clients.isEmpty()) {
                             editor.putString(KEY_DETECTED_CLIENTS, clients);
                         }
                         editor.apply();
-                        Log.d(TAG, "从目标应用 SP 同步数据到模块 SP: hook_installed=" + hookInstalled);
+                        Log.d(TAG, "从目标应用 SP 同步数据到模块 SP: request_count=" + requestCount);
                     }
                 }
             } catch (Throwable ignored) {}

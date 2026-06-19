@@ -102,7 +102,6 @@ public class MainActivity extends Activity {
     // ============ 数据模型 ============
     private static class StatsData {
         boolean moduleActive = false;
-        int hookInstalledCount = -1;
         int requestCount = -1;
         int targetHitCount = -1;
         long lastHookTime = -1;
@@ -131,9 +130,7 @@ public class MainActivity extends Activity {
                     try {
                         valueStr = cursor.getString(cursor.getColumnIndex("value_str"));
                     } catch (Throwable ignored) {}
-                    if ("hook_installed_count".equals(key))
-                        data.hookInstalledCount = (int) value;
-                    else if ("request_count".equals(key))
+                    if ("request_count".equals(key))
                         data.requestCount = (int) value;
                     else if ("target_hit_count".equals(key))
                         data.targetHitCount = (int) value;
@@ -151,17 +148,12 @@ public class MainActivity extends Activity {
         }
 
         // 2. 回退：从目标应用的 SharedPreferences 读
-        // 注意：值为 0 也尝试读（可能是 ContentProvider 写入失败但目标应用 SP 中有值）
-        if (data.hookInstalledCount <= 0 || data.requestCount <= 0 || data.targetHitCount <= 0) {
+        if (data.requestCount <= 0 || data.targetHitCount <= 0) {
             try {
                 Context targetCtx = createPackageContext(TARGET_PACKAGE,
                         Context.CONTEXT_IGNORE_SECURITY | Context.CONTEXT_INCLUDE_CODE);
                 SharedPreferences sp = targetCtx.getSharedPreferences("answer_revealer_status",
                         Context.MODE_MULTI_PROCESS | Context.MODE_PRIVATE);
-                if (data.hookInstalledCount <= 0) {
-                    int v = sp.getInt("hook_installed_count", 0);
-                    if (v > 0) data.hookInstalledCount = v;
-                }
                 if (data.requestCount <= 0) {
                     int v = sp.getInt("request_count", 0);
                     if (v > 0) data.requestCount = v;
@@ -230,8 +222,6 @@ public class MainActivity extends Activity {
         // 4. 模块自己的 SP 兜底
         try {
             SharedPreferences selfSp = getSharedPreferences("module_stats", MODE_PRIVATE);
-            if (data.hookInstalledCount < 0)
-                data.hookInstalledCount = selfSp.getInt("hook_installed_count", -1);
             if (data.requestCount < 0)
                 data.requestCount = selfSp.getInt("request_count", -1);
             if (data.targetHitCount < 0)
@@ -330,7 +320,7 @@ public class MainActivity extends Activity {
         String title = active ? "✓ 模块已激活" : "✗ 模块尚未激活";
         String hint = active
                 ? "Hook 已在目标应用中生效，可拦截并标记答案"
-                : "请在 LSPosed 管理器中启用本模块，并勾选作用域：tz.ycsy.az 和 com.answer.revealer。启用后杀掉目标应用进程，再重新打开。";
+                : "请在 LSPosed 管理器中启用本模块，并勾选作用域：tz.ycsy.az 和 com.answer.revealer。启用后请重启目标应用。";
 
         LinearLayout card = createCard();
         card.addView(createColorStrip(color));
@@ -375,45 +365,29 @@ public class MainActivity extends Activity {
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         content.addView(title);
 
-        // 启动目标应用 & 杀掉进程（同行）
-        LinearLayout btnRow1 = new LinearLayout(this);
-        btnRow1.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams brp = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams wrap = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        brp.topMargin = dp(12);
-        content.addView(btnRow1, brp);
+        wrap.topMargin = dp(12);
 
+        // 启动目标应用按钮
         Button launchBtn = new Button(this);
         launchBtn.setText("启动目标应用");
         launchBtn.setTextColor(0xFFFFFFFF);
         launchBtn.setTextSize(13);
         launchBtn.setBackground(makeRippleButton(COLOR_PRIMARY));
-        LinearLayout.LayoutParams lp1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        lp1.rightMargin = dp(8);
         launchBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) { launchTargetApp(); }
         });
-        btnRow1.addView(launchBtn, lp1);
+        content.addView(launchBtn, wrap);
 
-        Button killBtn = new Button(this);
-        killBtn.setText("杀掉目标进程");
-        killBtn.setTextColor(0xFFFFFFFF);
-        killBtn.setTextSize(13);
-        killBtn.setBackground(makeRippleButton(COLOR_DANGER));
-        killBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) { killTargetProcess(); }
-        });
-        btnRow1.addView(killBtn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-        // 刷新 & 清空（同行）
-        LinearLayout btnRow2 = new LinearLayout(this);
-        btnRow2.setOrientation(LinearLayout.HORIZONTAL);
+        // 刷新数据（与下面一行清空按钮对齐）
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams brp2 = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         brp2.topMargin = dp(12);
-        content.addView(btnRow2, brp2);
+        content.addView(btnRow, brp2);
 
         Button refreshBtn = new Button(this);
         refreshBtn.setText("↻ 刷新数据");
@@ -430,7 +404,7 @@ public class MainActivity extends Activity {
                 Toast.makeText(MainActivity.this, "已刷新", Toast.LENGTH_SHORT).show();
             }
         });
-        btnRow2.addView(refreshBtn, rlp);
+        btnRow.addView(refreshBtn, rlp);
 
         Button clearBtn = new Button(this);
         clearBtn.setText("清空统计数据");
@@ -451,8 +425,7 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        btnRow2.addView(clearBtn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
+        btnRow.addView(clearBtn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         card.addView(content);
         root.addView(card, cardParams());
     }
@@ -467,38 +440,27 @@ public class MainActivity extends Activity {
         content.setPadding(dp(16), dp(12), dp(16), dp(16));
 
         TextView title = new TextView(this);
-        title.setText("Hook 统计");
+        title.setText("统计数据");
         title.setTextSize(14);
         title.setTextColor(COLOR_PRIMARY_DARK);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         content.addView(title);
 
-        // 第一行：Hook 安装 / 答案命中
-        LinearLayout row1 = new LinearLayout(this);
-        row1.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams rp1 = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rp1.topMargin = dp(12);
-        content.addView(row1, rp1);
-
-        int hc = data != null ? data.hookInstalledCount : -1;
         int hh = data != null ? data.targetHitCount : -1;
         int rc = data != null ? data.requestCount : -1;
         long lt = data != null ? data.lastHookTime : -1;
 
-        addStatCell(row1, "Hook 安装", hc < 0 ? "--" : String.valueOf(hc), COLOR_PRIMARY);
-        addStatCell(row1, "答案命中", hh < 0 ? "--" : String.valueOf(hh), COLOR_ACCENT);
-
-        // 第二行：请求总数 / 最近活跃
-        LinearLayout row2 = new LinearLayout(this);
-        row2.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams rp2 = new LinearLayout.LayoutParams(
+        // 3 列 - 答案命中 / 请求总数 / 最近活跃
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rp2.topMargin = dp(8);
-        content.addView(row2, rp2);
+        rp.topMargin = dp(12);
+        content.addView(row, rp);
 
-        addStatCell(row2, "请求总数", rc < 0 ? "--" : String.valueOf(rc), COLOR_WARNING);
-        addStatCell(row2, "最近活跃", formatTime(lt), COLOR_TEXT_SECONDARY);
+        addStatCell(row, "答案命中", hh < 0 ? "--" : String.valueOf(hh), COLOR_ACCENT);
+        addStatCell(row, "请求总数", rc < 0 ? "--" : String.valueOf(rc), COLOR_WARNING);
+        addStatCell(row, "最近活跃", formatTime(lt), COLOR_TEXT_SECONDARY);
 
         card.addView(content);
         root.addView(card, cardParams());
@@ -568,8 +530,7 @@ public class MainActivity extends Activity {
                     sb.append("版本: ").append(pi.versionName).append("\n");
                 }
             } catch (Throwable ignored) {}
-            boolean running = isPackageRunning(TARGET_PACKAGE);
-            sb.append("状态: ").append(running ? "运行中" : "未运行");
+            sb.append("包名: ").append(TARGET_PACKAGE);
         } else {
             sb.append("✗ 未检测到 ").append(TARGET_PACKAGE).append("\n请先安装目标应用");
         }
@@ -631,7 +592,7 @@ public class MainActivity extends Activity {
             }
         } else {
             TextView empty = new TextView(this);
-            empty.setText("尚未检测到 HTTP 客户端\n\n请按以下步骤操作：\n  1. 在 LSPosed 管理器中确认模块已启用\n  2. 点击「杀掉目标进程」\n  3. 点击「启动目标应用」进入答题页\n  4. 回到本页面点击「刷新数据」");
+            empty.setText("尚未检测到 HTTP 客户端\n\n请按以下步骤操作：\n  1. 在 LSPosed 管理器中确认模块已启用，作用域包含目标应用\n  2. 点击「启动目标应用」进入答题页\n  3. 回到本页面点击「刷新数据」");
             empty.setTextSize(12);
             empty.setTextColor(COLOR_TEXT_SECONDARY);
             LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(
@@ -1186,175 +1147,11 @@ public class MainActivity extends Activity {
         Toast.makeText(this, "无法启动目标应用，请手动在系统桌面打开", Toast.LENGTH_LONG).show();
     }
 
-    private void killTargetProcess() {
-        final StringBuilder result = new StringBuilder();
-        boolean success = false;
-
-        // 策略 1: su root 执行 am force-stop（最可靠，已 root 的手机可直接执行）
-        // 尝试多种 su 命令格式（不同 root 管理器实现不同）
-        String[] suCmds = new String[]{
-                "su -c \"am force-stop " + TARGET_PACKAGE + "\"",
-                "su -c 'am force-stop " + TARGET_PACKAGE + "'",
-                "su -c am\\ force-stop\\ " + TARGET_PACKAGE,
-                "su 0 am force-stop " + TARGET_PACKAGE,
-                "su --shell=sh -c \"am force-stop " + TARGET_PACKAGE + "\""
-        };
-        for (String cmd : suCmds) {
-            try {
-                Process p = Runtime.getRuntime().exec(cmd);
-                int exitCode = p.waitFor();
-                if (exitCode == 0) {
-                    success = true;
-                    result.append("[root-am-force-stop ✓] ");
-                    break;
-                } else {
-                    result.append("[root-am-force-stop exit=" + exitCode + "] ");
-                }
-            } catch (Throwable ignored) {
-                result.append("[root-am-force-stop ✗] ");
-            }
-        }
-
-        // 策略 2: root killall + PID kill
-        if (!success) {
-            try {
-                // 先找 PID
-                java.io.BufferedReader pidReader = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(
-                                Runtime.getRuntime().exec("su -c \"pidof " + TARGET_PACKAGE + "\"").getInputStream()));
-                String pidLine = pidReader.readLine();
-                pidReader.close();
-                if (pidLine != null && pidLine.trim().length() > 0) {
-                    for (String pid : pidLine.trim().split(" ")) {
-                        if (pid.length() > 0) {
-                            try {
-                                Process p = Runtime.getRuntime().exec("su -c \"kill -9 " + pid + "\"");
-                                p.waitFor();
-                                result.append("[kill-9:" + pid + "] ");
-                            } catch (Throwable ignored) {}
-                        }
-                    }
-                    success = true;
-                }
-            } catch (Throwable ignored) {
-                result.append("[root-pid-kill ✗] ");
-            }
-        }
-
-        // 策略 3: 普通 API（非 root，可能杀不掉前台进程）
-        if (!success) {
-            try {
-                ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-                if (am != null) am.killBackgroundProcesses(TARGET_PACKAGE);
-                result.append("[killBackground] ");
-            } catch (Throwable ignored) {}
-            try {
-                Process p = Runtime.getRuntime().exec("killall " + TARGET_PACKAGE);
-                p.waitFor();
-                result.append("[killall] ");
-            } catch (Throwable ignored) {}
-        }
-
-        // 清空本地统计中的活动时间戳（避免显示"运行中"）
-        try {
-            android.content.SharedPreferences sp = getSharedPreferences("module_stats", MODE_PRIVATE);
-            sp.edit().putLong("last_hook_time", 0).apply();
-        } catch (Throwable ignored) {}
-
-        // 结果提示
-        if (success) {
-            Toast.makeText(this, "已强制停止目标应用（root 模式）",
-                    Toast.LENGTH_SHORT).show();
-            mCurrentPage = 0;
-            refreshStatsAsync();
-        } else {
-            // root 失败 → 跳转系统设置让用户手动停止
-            new android.app.AlertDialog.Builder(this)
-                    .setTitle("强制停止失败")
-                    .setMessage("无法通过 root 命令停止目标应用。\n\n请在系统设置中手动「强制停止」。\n\n已尝试: " + result.toString())
-                    .setPositiveButton("前往设置", new android.content.DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(android.content.DialogInterface dialog, int which) {
-                            try {
-                                Intent intent = new Intent(
-                                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                                intent.setData(Uri.parse("package:" + TARGET_PACKAGE));
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                startActivity(intent);
-                            } catch (Throwable t) {
-                                Toast.makeText(MainActivity.this,
-                                        "无法打开设置: " + t.getMessage(), Toast.LENGTH_SHORT).show();
-                            }
-                        }
-                    })
-                    .setNegativeButton("关闭", null)
-                    .show();
-        }
-    }
-
     private boolean isPackageInstalled(String pkg) {
         try {
             getPackageManager().getPackageInfo(pkg, 0);
             return true;
         } catch (Throwable t) { return false; }
-    }
-
-    private boolean isPackageRunning(String pkg) {
-        // 策略 1: 真实进程检测（最高优先级）— shell pidof（无需 root 也可见其他 app 进程）
-        try {
-            Process p = Runtime.getRuntime().exec("pidof " + pkg);
-            java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(p.getInputStream()));
-            String line = reader.readLine();
-            reader.close();
-            p.waitFor();
-            if (line != null && line.trim().length() > 0) {
-                // 有进程 ID 存在 → 包确实在运行
-                return true;
-            }
-        } catch (Throwable ignored) {}
-
-        // 策略 2: shell pgrep（pidof 在某些系统上可能不可用，pgrep 更通用）
-        try {
-            Process p = Runtime.getRuntime().exec("pgrep -f " + pkg);
-            java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(p.getInputStream()));
-            String line = reader.readLine();
-            reader.close();
-            p.waitFor();
-            if (line != null && line.trim().length() > 0) {
-                return true;
-            }
-        } catch (Throwable ignored) {}
-
-        // 策略 3: Android API — getRunningAppProcesses（Android 5.1+ 对第三方应用受限，但作为兜底）
-        try {
-            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            if (am != null) {
-                java.util.List<ActivityManager.RunningAppProcessInfo> list = am.getRunningAppProcesses();
-                if (list != null) {
-                    for (ActivityManager.RunningAppProcessInfo info : list) {
-                        if (pkg.equals(info.processName)) return true;
-                        if (info.processName != null && info.processName.startsWith(pkg + ":")) return true;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
-
-        // 策略 4: last_hook_time 作为辅助证据（仅 30 秒内且进程检测失败时才判断）
-        // 注意：如果用户强制停止了目标应用，这里不会误判，因为策略 1/2 会检测到进程已死
-        // 本策略仅用于 pidof/pgrep 在某些设备上因权限不可用时的兜底
-        try {
-            android.content.SharedPreferences sp = getSharedPreferences("module_stats", MODE_PRIVATE);
-            long lastTime = sp.getLong("last_hook_time", 0);
-            if (lastTime > 0 && System.currentTimeMillis() - lastTime < 30 * 1000) {
-                // 30 秒内有活动 → 认为可能仍在运行，但只做弱判断
-                return true;
-            }
-        } catch (Throwable ignored) {}
-
-        // 所有策略都没检测到 → 未运行
-        return false;
     }
 
     // ============ Xposed Hook 的方法（hook 成功后返回 true） ============
