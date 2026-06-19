@@ -4,10 +4,15 @@ import android.app.Activity;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.text.format.DateFormat;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 public class MainActivity extends Activity {
+
+    private static final String SP_NAME = "answer_revealer_status";
+    private static final String SP_KEY_ACTIVE = "module_active_v1";
+    private static final String SP_KEY_LAST = "last_intercept_time";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -26,6 +31,16 @@ public class MainActivity extends Activity {
         title.setTextColor(Color.BLACK);
         root.addView(title, lpMatch());
 
+        // 模块状态检测：优先由 Xposed Hook 替换返回值；失败后回退到 SharedPreferences
+        boolean active = isModuleActive();
+        if (!active) {
+            try {
+                SharedPreferences sp = getSharedPreferences(SP_NAME, MODE_PRIVATE);
+                active = sp.getBoolean(SP_KEY_ACTIVE, false);
+            } catch (Throwable ignored) {
+            }
+        }
+
         LinearLayout.LayoutParams section = lpMatch();
         section.topMargin = pad;
 
@@ -36,8 +51,22 @@ public class MainActivity extends Activity {
         root.addView(statusLabel, section);
 
         TextView status = new TextView(this);
-        boolean active = MainActivity.isModuleActive();
-        status.setText(active ? "模块已激活并生效" : "模块尚未在 LSPosed 中启用\n请在 LSPosed 管理器中启用本模块并勾选作用域为 tz.ycsy.az");
+        if (active) {
+            status.setText("✓ 模块已激活并生效\n");
+            try {
+                SharedPreferences sp = getSharedPreferences(SP_NAME, MODE_PRIVATE);
+                long last = sp.getLong(SP_KEY_LAST, 0);
+                if (last > 0) {
+                    status.setText(status.getText() + "最近拦截时间：" +
+                            DateFormat.format("yyyy-MM-dd HH:mm:ss", last));
+                } else {
+                    status.setText(status.getText() + "尚未检测到目标应用的请求");
+                }
+            } catch (Throwable ignored) {
+            }
+        } else {
+            status.setText("✗ 模块尚未在 LSPosed 中启用\n\n请在 LSPosed 管理器中启用本模块，并确认作用域中已勾选：\n  • tz.ycsy.az\n  • com.answer.revealer\n\n启用后重启目标应用，再次打开本界面即可看到「已激活」。");
+        }
         status.setTextSize(13);
         status.setTextColor(active ? 0xFF2E7D32 : 0xFFc62828);
         root.addView(status, lpMatch());
@@ -65,7 +94,7 @@ public class MainActivity extends Activity {
         root.addView(pathLabel, lp3);
 
         TextView path = new TextView(this);
-        path.setText("/edu-core-server/app/exam/getQuestion");
+        path.setText("/edu-core-server/app/exam/getQuestion\n\n（同时兼容 OkHttp 3.x / 4.x / 5.x 的异步与同步调用）");
         path.setTextSize(13);
         path.setTextColor(Color.BLACK);
         root.addView(path, lpMatch());
@@ -79,7 +108,7 @@ public class MainActivity extends Activity {
         root.addView(infoLabel, lp4);
 
         TextView info = new TextView(this);
-        info.setText("拦截上述接口的响应，自动标红正确选项并弹窗显示完整请求和响应内容。\n\n提示：在 LSPosed 管理器中启用本模块后，需要杀掉目标应用进程并重新打开。");
+        info.setText("拦截上述接口响应，解析 JSON 后将 isRight=1 的选项替换为【 xxx 正确答案 】，然后将修改后的响应返回给目标应用，并弹窗显示原始内容。\n\n提示：\n  1. 在 LSPosed 管理器中启用本模块后，需要杀掉目标应用进程并重新打开。\n  2. 如遇弹窗但答案文本未被高亮，说明目标 App 的 TextView 未解析 HTML 样式，将以纯文本方式显示「 xxx 正确答案 」。");
         info.setTextSize(13);
         info.setTextColor(Color.BLACK);
         root.addView(info, lpMatch());
@@ -87,6 +116,11 @@ public class MainActivity extends Activity {
         setContentView(root);
     }
 
+    /**
+     * 模块激活检测。
+     * 优先由 Xposed Hook 在模块包中替换此方法返回值为 true；
+     * 如 hook 未生效，MainActivity.onCreate 会再通过 SharedPreferences 做二次检测。
+     */
     public static boolean isModuleActive() {
         return false;
     }
