@@ -2,6 +2,7 @@ package com.answer.revealer;
 
 import android.app.Activity;
 import android.app.ActivityManager;
+import android.app.AlertDialog;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
@@ -9,18 +10,17 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.LayerDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.util.Linkify;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.RelativeLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -30,7 +30,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -46,72 +45,40 @@ public class MainActivity extends Activity {
     private static final Uri URI_CLEAR = Uri.parse("content://com.answer.revealer.stats/clear");
 
     // 颜色配置（Material Design 风格）
-    private static final int COLOR_PRIMARY = 0xFF2196F3;        // 亮蓝
-    private static final int COLOR_PRIMARY_DARK = 0xFF1976D2;   // 深蓝
-    private static final int COLOR_ACCENT = 0xFF4CAF50;         // 绿
-    private static final int COLOR_WARNING = 0xFFFF9800;        // 橙
-    private static final int COLOR_DANGER = 0xFFF44336;         // 红
-    private static final int COLOR_INFO = 0xFF00BCD4;           // 青
+    private static final int COLOR_PRIMARY = 0xFF2196F3;
+    private static final int COLOR_PRIMARY_DARK = 0xFF1976D2;
+    private static final int COLOR_ACCENT = 0xFF4CAF50;
+    private static final int COLOR_WARNING = 0xFFFF9800;
+    private static final int COLOR_DANGER = 0xFFF44336;
+    private static final int COLOR_INFO = 0xFF00BCD4;
     private static final int COLOR_TEXT_PRIMARY = 0xFF212121;
     private static final int COLOR_TEXT_SECONDARY = 0xFF757575;
-    private static final int COLOR_TEXT_LIGHT = 0xFFE0E0E0;
     private static final int COLOR_BG = 0xFFF5F7FA;
     private static final int COLOR_CARD = 0xFFFFFFFF;
-    private static final int COLOR_DIVIDER = 0xFFE0E4EC;
 
-    private LinearLayout mRoot;
+    // 分页 & 截断
+    private static final int PAGE_SIZE = 10;
+    private static final int URL_PREVIEW_LENGTH = 80;
+
     private Handler mHandler;
+
+    // 当前分页
+    private int mCurrentPage = 0;
+
+    // 数据缓存
+    private StatsData mData;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         mHandler = new Handler(Looper.getMainLooper());
-
-        int pad = dp(16);
-
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(COLOR_BG);
-        scrollView.setPadding(0, 0, 0, dp(24));
-
-        mRoot = new LinearLayout(this);
-        mRoot.setOrientation(LinearLayout.VERTICAL);
-        mRoot.setPadding(pad, dp(20), pad, pad);
-
-        // ====== 标题 ======
-        addHeader(mRoot);
-
-        // ====== 模块状态卡 ======
-        addStatusCard(mRoot);
-
-        // ====== 快捷操作卡 ======
-        addActionCard(mRoot);
-
-        // ====== 统计卡（数字） ======
-        addStatsCard(mRoot);
-
-        // ====== 目标应用信息 ======
-        addTargetInfoCard(mRoot);
-
-        // ====== HTTP 客户端检测 ======
-        addHttpClientsCard(mRoot);
-
-        // ====== 最近请求 ======
-        addRecentRequestsCard(mRoot);
-
-        // ====== 说明 ======
-        addInfoCard(mRoot);
-
-        scrollView.addView(mRoot);
-        setContentView(scrollView);
-
-        // 异步刷新数据
+        // 初次进入刷一次
         refreshStatsAsync();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        // 每次回到界面都刷新
         refreshStatsAsync();
     }
 
@@ -124,13 +91,15 @@ public class MainActivity extends Activity {
                 mHandler.post(new Runnable() {
                     @Override
                     public void run() {
-                        updateUIWithData(data);
+                        mData = data;
+                        renderUI();
                     }
                 });
             }
         }).start();
     }
 
+    // ============ 数据模型 ============
     private static class StatsData {
         boolean moduleActive = false;
         int hookInstalledCount = -1;
@@ -139,7 +108,6 @@ public class MainActivity extends Activity {
         long lastHookTime = -1;
         String detectedClients = "";
         List<RequestItem> requests = new ArrayList<>();
-        boolean providerAvailable = false;
     }
 
     private static class RequestItem {
@@ -156,11 +124,13 @@ public class MainActivity extends Activity {
         try {
             cursor = getContentResolver().query(URI_QUERY, null, null, null, null);
             if (cursor != null && cursor.moveToFirst()) {
-                data.providerAvailable = true;
                 do {
                     String key = cursor.getString(cursor.getColumnIndex("key"));
                     long value = cursor.getLong(cursor.getColumnIndex("value"));
-                    String valueStr = cursor.getString(cursor.getColumnIndex("value_str"));
+                    String valueStr = null;
+                    try {
+                        valueStr = cursor.getString(cursor.getColumnIndex("value_str"));
+                    } catch (Throwable ignored) {}
                     if ("hook_installed_count".equals(key))
                         data.hookInstalledCount = (int) value;
                     else if ("request_count".equals(key))
@@ -175,30 +145,34 @@ public class MainActivity extends Activity {
                         data.detectedClients = valueStr != null ? valueStr : "";
                 } while (cursor.moveToNext());
             }
-        } catch (Throwable t) {
-            // ContentProvider 可能还没初始化（目标应用还没启动）
-            android.util.Log.w("AnswerModule", "ContentProvider 查询失败: " + t.getMessage());
+        } catch (Throwable ignored) {
         } finally {
             if (cursor != null) try { cursor.close(); } catch (Throwable ignored) {}
         }
 
-        // 2. 如果 ContentProvider 没数据，尝试从目标应用的 SP 读（跨进程）
-        if (data.hookInstalledCount < 0) {
+        // 2. 回退：从目标应用的 SharedPreferences 读
+        if (data.hookInstalledCount < 0 || data.requestCount < 0 || data.targetHitCount < 0) {
             try {
                 Context targetCtx = createPackageContext(TARGET_PACKAGE,
                         Context.CONTEXT_IGNORE_SECURITY | Context.CONTEXT_INCLUDE_CODE);
                 SharedPreferences sp = targetCtx.getSharedPreferences("answer_revealer_status",
                         Context.MODE_MULTI_PROCESS | Context.MODE_PRIVATE);
-                data.hookInstalledCount = sp.getInt("hook_installed_count", -1);
-                data.requestCount = sp.getInt("request_count", -1);
-                data.targetHitCount = sp.getInt("target_hit_count", -1);
-                data.lastHookTime = sp.getLong("last_hook_time", -1);
-                data.moduleActive = sp.getBoolean("module_active_v1", false);
-                data.detectedClients = sp.getString("detected_clients", "");
+                if (data.hookInstalledCount < 0)
+                    data.hookInstalledCount = sp.getInt("hook_installed_count", -1);
+                if (data.requestCount < 0)
+                    data.requestCount = sp.getInt("request_count", -1);
+                if (data.targetHitCount < 0)
+                    data.targetHitCount = sp.getInt("target_hit_count", -1);
+                if (data.lastHookTime < 0)
+                    data.lastHookTime = sp.getLong("last_hook_time", -1);
+                if (!data.moduleActive)
+                    data.moduleActive = sp.getBoolean("module_active_v1", false);
+                if (data.detectedClients == null || data.detectedClients.isEmpty())
+                    data.detectedClients = sp.getString("detected_clients", "");
             } catch (Throwable ignored) {}
         }
 
-        // 3. 请求记录 - 从 ContentProvider
+        // 3. 请求记录 - 从 ContentProvider 读
         try {
             Cursor rc = getContentResolver().query(URI_REQUESTS, null, null, null, null);
             if (rc != null && rc.moveToFirst()) {
@@ -238,15 +212,15 @@ public class MainActivity extends Activity {
             } catch (Throwable ignored) {}
         }
 
-        // 排序：按时间
+        // 排序：按时间倒序（新的在前）
         Collections.sort(data.requests, new Comparator<RequestItem>() {
             @Override
             public int compare(RequestItem a, RequestItem b) {
-                return Long.compare(b.time, a.time); // 新的在前
+                return Long.compare(b.time, a.time);
             }
         });
 
-        // 4. 也从模块自己的 SP 读（兜底）
+        // 4. 模块自己的 SP 兜底
         try {
             SharedPreferences selfSp = getSharedPreferences("module_stats", MODE_PRIVATE);
             if (data.hookInstalledCount < 0)
@@ -259,42 +233,56 @@ public class MainActivity extends Activity {
                 data.lastHookTime = selfSp.getLong("last_hook_time", -1);
         } catch (Throwable ignored) {}
 
-        // 5. 如果 Hook 了自己的 isModuleActive，直接返回 true
+        // 5. 通过 Xposed Hook 判断是否激活
         try {
-            data.moduleActive = isModuleActive();
+            if (isModuleActive()) data.moduleActive = true;
         } catch (Throwable ignored) {}
 
         return data;
     }
 
-    private void updateUIWithData(StatsData data) {
-        // 完全重建视图（简单可靠）
+    // ============ 主渲染 ============
+    private void renderUI() {
         int pad = dp(16);
         ScrollView scrollView = new ScrollView(this);
         scrollView.setBackgroundColor(COLOR_BG);
         scrollView.setPadding(0, 0, 0, dp(24));
+        scrollView.setId(android.R.id.list);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(pad, dp(20), pad, pad);
 
+        // 标题
         addHeader(root);
-        addStatusCard(root, data);
+
+        // 模块状态
+        addStatusCard(root, mData);
+
+        // 操作按钮
         addActionCard(root);
-        addStatsCard(root, data);
+
+        // 统计数字
+        addStatsCard(root, mData);
+
+        // 目标应用信息
         addTargetInfoCard(root);
-        addHttpClientsCard(root, data);
-        addRecentRequestsCard(root, data);
+
+        // HTTP 客户端列表
+        addHttpClientsCard(root, mData);
+
+        // 最近请求（分页）
+        addRecentRequestsCard(root, mData);
+
+        // 说明
         addInfoCard(root);
 
         scrollView.addView(root);
         setContentView(scrollView);
-        mRoot = root;
     }
 
     // ============ 标题 ============
     private void addHeader(LinearLayout root) {
-        // 渐变顶部
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(
@@ -302,7 +290,6 @@ public class MainActivity extends Activity {
         hp.bottomMargin = dp(20);
         root.addView(header, hp);
 
-        // 主标题
         TextView title = new TextView(this);
         title.setText("答案显示模块");
         title.setTextSize(24);
@@ -310,7 +297,6 @@ public class MainActivity extends Activity {
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         header.addView(title);
 
-        // 副标题
         TextView subtitle = new TextView(this);
         subtitle.setText("LSPosed Hook 管理工具");
         subtitle.setTextSize(13);
@@ -320,7 +306,6 @@ public class MainActivity extends Activity {
         sp2.topMargin = dp(4);
         header.addView(subtitle, sp2);
 
-        // 包名
         TextView pkg = new TextView(this);
         pkg.setText("目标: " + TARGET_PACKAGE);
         pkg.setTextSize(11);
@@ -331,23 +316,16 @@ public class MainActivity extends Activity {
         header.addView(pkg, pp);
     }
 
-    // ============ 模块状态卡（新版） ============
-    private void addStatusCard(LinearLayout root) {
-        addStatusCard(root, null);
-    }
-
+    // ============ 模块状态卡 ============
     private void addStatusCard(LinearLayout root, StatsData data) {
-        int color = (data != null && data.moduleActive) ? COLOR_ACCENT : COLOR_DANGER;
-        String title = (data != null && data.moduleActive) ? "✓ 模块已激活" : "✗ 模块尚未激活";
-        String hint;
-        if (data != null && data.moduleActive) {
-            hint = "Hook 已在目标应用 (tz.ycsy.az) 中生效，可拦截并标记答案";
-        } else {
-            hint = "请在 LSPosed 管理器中启用本模块，并勾选作用域：\n  • tz.ycsy.az\n  • com.answer.revealer\n启用后杀掉目标应用进程，再重新打开目标应用";
-        }
+        boolean active = data != null && data.moduleActive;
+        int color = active ? COLOR_ACCENT : COLOR_DANGER;
+        String title = active ? "✓ 模块已激活" : "✗ 模块尚未激活";
+        String hint = active
+                ? "Hook 已在目标应用中生效，可拦截并标记答案"
+                : "请在 LSPosed 管理器中启用本模块，并勾选作用域：tz.ycsy.az 和 com.answer.revealer。启用后杀掉目标应用进程，再重新打开。";
 
         LinearLayout card = createCard();
-        // 顶部色条
         card.addView(createColorStrip(color));
 
         LinearLayout content = new LinearLayout(this);
@@ -383,7 +361,6 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(16), dp(12), dp(16), dp(16));
 
-        // 标题
         TextView title = new TextView(this);
         title.setText("快捷操作");
         title.setTextSize(14);
@@ -391,15 +368,14 @@ public class MainActivity extends Activity {
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         content.addView(title);
 
-        // 按钮行
-        LinearLayout btnRow = new LinearLayout(this);
-        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        // 启动目标应用 & 杀掉进程（同行）
+        LinearLayout btnRow1 = new LinearLayout(this);
+        btnRow1.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams brp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         brp.topMargin = dp(12);
-        content.addView(btnRow, brp);
+        content.addView(btnRow1, brp);
 
-        // 启动目标应用按钮（蓝）
         Button launchBtn = new Button(this);
         launchBtn.setText("启动目标应用");
         launchBtn.setTextColor(0xFFFFFFFF);
@@ -411,9 +387,8 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) { launchTargetApp(); }
         });
-        btnRow.addView(launchBtn, lp1);
+        btnRow1.addView(launchBtn, lp1);
 
-        // 杀掉目标进程（红）
         Button killBtn = new Button(this);
         killBtn.setText("杀掉目标进程");
         killBtn.setTextColor(0xFFFFFFFF);
@@ -423,58 +398,59 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) { killTargetProcess(); }
         });
-        btnRow.addView(killBtn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        btnRow1.addView(killBtn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        // 刷新按钮
+        // 刷新 & 清空（同行）
+        LinearLayout btnRow2 = new LinearLayout(this);
+        btnRow2.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams brp2 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        brp2.topMargin = dp(12);
+        content.addView(btnRow2, brp2);
+
         Button refreshBtn = new Button(this);
         refreshBtn.setText("↻ 刷新数据");
         refreshBtn.setTextColor(0xFFFFFFFF);
         refreshBtn.setTextSize(13);
-        refreshBtn.setBackground(makeRippleButton(COLOR_TEXT_SECONDARY));
-        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rlp.topMargin = dp(12);
+        refreshBtn.setBackground(makeRippleButton(COLOR_INFO));
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        rlp.rightMargin = dp(8);
         refreshBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                mCurrentPage = 0;
                 refreshStatsAsync();
                 Toast.makeText(MainActivity.this, "已刷新", Toast.LENGTH_SHORT).show();
             }
         });
-        content.addView(refreshBtn, rlp);
+        btnRow2.addView(refreshBtn, rlp);
 
-        // 清空数据
         Button clearBtn = new Button(this);
         clearBtn.setText("清空统计数据");
         clearBtn.setTextColor(0xFFFFFFFF);
         clearBtn.setTextSize(13);
         clearBtn.setBackground(makeRippleButton(COLOR_WARNING));
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        clp.topMargin = dp(8);
         clearBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 try {
                     getContentResolver().delete(URI_CLEAR, null, null);
-                    // 同时清空自己的 SP
                     getSharedPreferences("module_stats", MODE_PRIVATE).edit().clear().apply();
-                    Toast.makeText(MainActivity.this, "已清空统计数据", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "已清空，请打开目标应用触发新统计", Toast.LENGTH_SHORT).show();
+                    mCurrentPage = 0;
                     refreshStatsAsync();
                 } catch (Throwable t) {
                     Toast.makeText(MainActivity.this, "清空失败: " + t.getMessage(), Toast.LENGTH_SHORT).show();
                 }
             }
         });
-        content.addView(clearBtn, clp);
+        btnRow2.addView(clearBtn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         card.addView(content);
         root.addView(card, cardParams());
     }
 
-    // ============ 统计卡（数字格子） ============
-    private void addStatsCard(LinearLayout root) { addStatsCard(root, null); }
-
+    // ============ 统计数字卡 ============
     private void addStatsCard(LinearLayout root, StatsData data) {
         LinearLayout card = createCard();
         card.addView(createColorStrip(COLOR_ACCENT));
@@ -483,7 +459,6 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(16), dp(12), dp(16), dp(16));
 
-        // 标题
         TextView title = new TextView(this);
         title.setText("Hook 统计");
         title.setTextSize(14);
@@ -491,7 +466,7 @@ public class MainActivity extends Activity {
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         content.addView(title);
 
-        // 数字网格（2x2）
+        // 第一行：Hook 安装 / 答案命中
         LinearLayout row1 = new LinearLayout(this);
         row1.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams rp1 = new LinearLayout.LayoutParams(
@@ -504,11 +479,10 @@ public class MainActivity extends Activity {
         int rc = data != null ? data.requestCount : -1;
         long lt = data != null ? data.lastHookTime : -1;
 
-        // 左上: Hook 安装
         addStatCell(row1, "Hook 安装", hc < 0 ? "--" : String.valueOf(hc), COLOR_PRIMARY);
-        // 右上: 答案命中
         addStatCell(row1, "答案命中", hh < 0 ? "--" : String.valueOf(hh), COLOR_ACCENT);
 
+        // 第二行：请求总数 / 最近活跃
         LinearLayout row2 = new LinearLayout(this);
         row2.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams rp2 = new LinearLayout.LayoutParams(
@@ -516,9 +490,7 @@ public class MainActivity extends Activity {
         rp2.topMargin = dp(8);
         content.addView(row2, rp2);
 
-        // 左下: 请求总数
         addStatCell(row2, "请求总数", rc < 0 ? "--" : String.valueOf(rc), COLOR_WARNING);
-        // 右下: 最近时间
         addStatCell(row2, "最近活跃", formatTime(lt), COLOR_TEXT_SECONDARY);
 
         card.addView(content);
@@ -531,7 +503,7 @@ public class MainActivity extends Activity {
         cell.setGravity(Gravity.CENTER);
 
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xFFFFFFFF);
+        bg.setColor(COLOR_CARD);
         bg.setCornerRadius(dp(8));
         bg.setStroke(dp(1), 0xFFE0E4EC);
         cell.setBackground(bg);
@@ -542,7 +514,6 @@ public class MainActivity extends Activity {
         cell.setLayoutParams(cp);
         cell.setPadding(dp(12), dp(14), dp(12), dp(14));
 
-        // 值
         TextView val = new TextView(this);
         val.setText(value);
         val.setTextSize(20);
@@ -551,7 +522,6 @@ public class MainActivity extends Activity {
         val.setGravity(Gravity.CENTER);
         cell.addView(val, lpMatch());
 
-        // 标签
         TextView lab = new TextView(this);
         lab.setText(label);
         lab.setTextSize(11);
@@ -565,7 +535,7 @@ public class MainActivity extends Activity {
         parent.addView(cell);
     }
 
-    // ============ 目标应用信息 ============
+    // ============ 目标应用信息卡 ============
     private void addTargetInfoCard(LinearLayout root) {
         LinearLayout card = createCard();
         card.addView(createColorStrip(COLOR_INFO));
@@ -610,9 +580,7 @@ public class MainActivity extends Activity {
         root.addView(card, cardParams());
     }
 
-    // ============ HTTP 客户端检测卡（列表） ============
-    private void addHttpClientsCard(LinearLayout root) { addHttpClientsCard(root, null); }
-
+    // ============ HTTP 客户端检测列表 ============
     private void addHttpClientsCard(LinearLayout root, StatsData data) {
         LinearLayout card = createCard();
         card.addView(createColorStrip(COLOR_PRIMARY));
@@ -621,7 +589,6 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(16), dp(12), dp(16), dp(16));
 
-        // 标题
         TextView title = new TextView(this);
         title.setText("检测到的 HTTP 客户端 / 框架");
         title.setTextSize(14);
@@ -629,7 +596,6 @@ public class MainActivity extends Activity {
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         content.addView(title);
 
-        // 解析客户端列表
         String raw = data != null ? data.detectedClients : "";
         if (raw == null) raw = "";
         List<String> clients = new ArrayList<>();
@@ -640,7 +606,6 @@ public class MainActivity extends Activity {
         }
 
         if (!clients.isEmpty()) {
-            // 计数
             TextView count = new TextView(this);
             count.setText("共 " + clients.size() + " 个类已在目标应用中发现");
             count.setTextSize(12);
@@ -650,9 +615,8 @@ public class MainActivity extends Activity {
             cp.topMargin = dp(8);
             content.addView(count, cp);
 
-            // 列表
             for (int i = 0; i < clients.size(); i++) {
-                View row = makeListItem(i + 1, clients.get(i), null, COLOR_PRIMARY);
+                View row = makeListItem(i + 1, clients.get(i), null, COLOR_PRIMARY, false);
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 lp.topMargin = (i == 0) ? dp(8) : dp(6);
@@ -660,7 +624,7 @@ public class MainActivity extends Activity {
             }
         } else {
             TextView empty = new TextView(this);
-            empty.setText("尚未检测到 HTTP 客户端\n\n请按以下步骤操作：\n  1. 在 LSPosed 管理器中确认模块已启用\n  2. 点击「杀掉目标进程」\n  3. 点击「启动目标应用」进入答题页\n  4. 回到本页面点击「刷新数据」\n\n目标应用使用 Flutter / React Native 等跨平台框架时，Java 层类可能较少，这是正常的。");
+            empty.setText("尚未检测到 HTTP 客户端\n\n请按以下步骤操作：\n  1. 在 LSPosed 管理器中确认模块已启用\n  2. 点击「杀掉目标进程」\n  3. 点击「启动目标应用」进入答题页\n  4. 回到本页面点击「刷新数据」");
             empty.setTextSize(12);
             empty.setTextColor(COLOR_TEXT_SECONDARY);
             LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(
@@ -673,9 +637,7 @@ public class MainActivity extends Activity {
         root.addView(card, cardParams());
     }
 
-    // ============ 最近请求记录（列表） ============
-    private void addRecentRequestsCard(LinearLayout root) { addRecentRequestsCard(root, null); }
-
+    // ============ 最近请求记录（分页 + 截断） ============
     private void addRecentRequestsCard(LinearLayout root, StatsData data) {
         LinearLayout card = createCard();
         card.addView(createColorStrip(COLOR_WARNING));
@@ -692,9 +654,11 @@ public class MainActivity extends Activity {
         content.addView(title);
 
         List<RequestItem> requests = data != null ? data.requests : null;
+
         if (requests != null && !requests.isEmpty()) {
+            // 总数
             TextView count = new TextView(this);
-            count.setText("共 " + requests.size() + " 条");
+            count.setText("共 " + requests.size() + " 条记录");
             count.setTextSize(12);
             count.setTextColor(COLOR_ACCENT);
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
@@ -702,10 +666,28 @@ public class MainActivity extends Activity {
             cp.topMargin = dp(8);
             content.addView(count, cp);
 
-            int limit = Math.min(requests.size(), 30);
-            for (int i = 0; i < limit; i++) {
-                RequestItem item = requests.get(i);
-                // 判断类型颜色
+            // 计算分页
+            int totalPages = (requests.size() + PAGE_SIZE - 1) / PAGE_SIZE;
+            if (mCurrentPage >= totalPages) mCurrentPage = totalPages - 1;
+            if (mCurrentPage < 0) mCurrentPage = 0;
+
+            int startIdx = mCurrentPage * PAGE_SIZE;
+            int endIdx = Math.min(startIdx + PAGE_SIZE, requests.size());
+
+            // 当前范围提示
+            TextView rangeTv = new TextView(this);
+            rangeTv.setText("显示第 " + (startIdx + 1) + " - " + endIdx + " 条 / 第 " + (mCurrentPage + 1) + " 页 / 共 " + totalPages + " 页");
+            rangeTv.setTextSize(11);
+            rangeTv.setTextColor(COLOR_TEXT_SECONDARY);
+            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            rlp.topMargin = dp(4);
+            content.addView(rangeTv, rlp);
+
+            // 渲染当前页条目
+            for (int i = startIdx; i < endIdx; i++) {
+                final RequestItem item = requests.get(i);
+                final int idx = i + 1;
                 int color = COLOR_PRIMARY;
                 if (item.type != null) {
                     if (item.type.contains("WEBVIEW")) color = COLOR_INFO;
@@ -713,27 +695,78 @@ public class MainActivity extends Activity {
                     else if (item.type.contains("URL")) color = COLOR_ACCENT;
                     else if (item.type.contains("SOCKET")) color = COLOR_DANGER;
                 }
-                View row = makeListItem(i + 1, item.url, item.type, color);
+                View row = makeListItem(idx, item.url, item.type, color, true);
+                row.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showRequestDetail(item, idx);
+                    }
+                });
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                lp.topMargin = (i == 0) ? dp(8) : dp(6);
+                lp.topMargin = dp(6);
                 content.addView(row, lp);
             }
 
-            if (requests.size() > limit) {
-                TextView more = new TextView(this);
-                more.setText("... 还有 " + (requests.size() - limit) + " 条");
-                more.setTextSize(11);
-                more.setTextColor(COLOR_TEXT_SECONDARY);
-                more.setGravity(Gravity.CENTER);
-                LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                mp.topMargin = dp(8);
-                content.addView(more, mp);
+            // 分页按钮
+            LinearLayout pagerRow = new LinearLayout(this);
+            pagerRow.setOrientation(LinearLayout.HORIZONTAL);
+            pagerRow.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams pprp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            pprp.topMargin = dp(14);
+            content.addView(pagerRow, pprp);
+
+            final boolean hasPrev = mCurrentPage > 0;
+            final boolean hasNext = mCurrentPage < totalPages - 1;
+
+            Button prevBtn = new Button(this);
+            prevBtn.setText("◀ 上一页");
+            prevBtn.setTextSize(12);
+            prevBtn.setTextColor(0xFFFFFFFF);
+            LinearLayout.LayoutParams prevLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            prevLp.rightMargin = dp(8);
+            prevBtn.setLayoutParams(prevLp);
+            if (hasPrev) {
+                prevBtn.setBackground(makeRippleButton(COLOR_PRIMARY));
+                prevBtn.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (mCurrentPage > 0) {
+                            mCurrentPage--;
+                            renderUI();
+                        }
+                    }
+                });
+            } else {
+                prevBtn.setBackground(makeRippleButton(0xFFB0BEC5));
+                prevBtn.setEnabled(false);
             }
+            pagerRow.addView(prevBtn);
+
+            Button nextBtn = new Button(this);
+            nextBtn.setText("下一页 ▶");
+            nextBtn.setTextSize(12);
+            nextBtn.setTextColor(0xFFFFFFFF);
+            LinearLayout.LayoutParams nextLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            nextBtn.setLayoutParams(nextLp);
+            if (hasNext) {
+                nextBtn.setBackground(makeRippleButton(COLOR_PRIMARY));
+                nextBtn.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        mCurrentPage++;
+                        renderUI();
+                    }
+                });
+            } else {
+                nextBtn.setBackground(makeRippleButton(0xFFB0BEC5));
+                nextBtn.setEnabled(false);
+            }
+            pagerRow.addView(nextBtn);
         } else {
             TextView empty = new TextView(this);
-            empty.setText("尚未捕获任何请求\n\n请先打开目标应用并进入答题页面。\n如果答题页面是 WebView，请求将被拦截并记录。");
+            empty.setText("尚未捕获任何请求\n\n请先打开目标应用并进入答题页面。答题页面通常使用 WebView，请求将被自动拦截并记录。");
             empty.setTextSize(12);
             empty.setTextColor(COLOR_TEXT_SECONDARY);
             LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(
@@ -744,6 +777,258 @@ public class MainActivity extends Activity {
 
         card.addView(content);
         root.addView(card, cardParams());
+    }
+
+    // ============ 列表行（支持截断 + "查看全部"） ============
+    private View makeListItem(int index, String mainText, String typeLabel, int color, boolean truncate) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(COLOR_CARD);
+        bg.setCornerRadius(dp(10));
+        bg.setStroke(dp(1), 0xFFE0E4EC);
+        row.setBackground(bg);
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+
+        // 序号圆章
+        LinearLayout circle = new LinearLayout(this);
+        GradientDrawable circBg = new GradientDrawable();
+        circBg.setColor(color);
+        circBg.setCornerRadius(dp(14));
+        circle.setBackground(circBg);
+        circle.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams circLp = new LinearLayout.LayoutParams(dp(28), dp(28));
+        circLp.setMargins(0, 0, dp(12), 0);
+        circle.setLayoutParams(circLp);
+
+        TextView num = new TextView(this);
+        num.setText(String.valueOf(index));
+        num.setTextSize(13);
+        num.setTextColor(0xFFFFFFFF);
+        num.setTypeface(null, android.graphics.Typeface.BOLD);
+        num.setGravity(Gravity.CENTER);
+        circle.addView(num);
+
+        row.addView(circle);
+
+        // 右侧文本区
+        LinearLayout textArea = new LinearLayout(this);
+        textArea.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams tap = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        tap.gravity = Gravity.CENTER_VERTICAL;
+        textArea.setLayoutParams(tap);
+
+        if (typeLabel != null && !typeLabel.isEmpty()) {
+            TextView typeTv = new TextView(this);
+            typeTv.setText(typeLabel);
+            typeTv.setTextSize(11);
+            typeTv.setTextColor(color);
+            typeTv.setTypeface(null, android.graphics.Typeface.BOLD);
+            typeTv.setAllCaps(true);
+            textArea.addView(typeTv);
+        }
+
+        // URL 文本（可能截断）
+        String displayText = mainText;
+        boolean isLong = truncate && mainText != null && mainText.length() > URL_PREVIEW_LENGTH;
+        if (isLong) {
+            displayText = mainText.substring(0, URL_PREVIEW_LENGTH) + "...";
+        }
+
+        TextView mainTv = new TextView(this);
+        mainTv.setText(displayText);
+        mainTv.setTextSize(11);
+        mainTv.setTextColor(COLOR_TEXT_PRIMARY);
+        LinearLayout.LayoutParams mtp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        if (typeLabel != null && !typeLabel.isEmpty()) mtp.topMargin = dp(2);
+        textArea.addView(mainTv, mtp);
+
+        // 如果是长 URL，加一个 "查看全部" 提示
+        if (isLong) {
+            TextView more = new TextView(this);
+            more.setText("▸ 点击查看完整内容 (" + mainText.length() + " 字符)");
+            more.setTextSize(10);
+            more.setTextColor(COLOR_PRIMARY);
+            more.setTypeface(null, android.graphics.Typeface.BOLD);
+            LinearLayout.LayoutParams mrp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            mrp.topMargin = dp(4);
+            textArea.addView(more, mrp);
+        }
+
+        row.addView(textArea);
+
+        // 点击箭头（可点击感）
+        if (truncate) {
+            TextView arrow = new TextView(this);
+            arrow.setText(" ›");
+            arrow.setTextSize(20);
+            arrow.setTextColor(COLOR_TEXT_SECONDARY);
+            arrow.setGravity(Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            alp.setMargins(dp(6), 0, 0, 0);
+            arrow.setLayoutParams(alp);
+            row.addView(arrow);
+        }
+
+        return row;
+    }
+
+    // ============ 请求详情弹窗（美化） ============
+    private void showRequestDetail(RequestItem item, int index) {
+        // 颜色
+        int color = COLOR_PRIMARY;
+        if (item.type != null) {
+            if (item.type.contains("WEBVIEW")) color = COLOR_INFO;
+            else if (item.type.contains("OKHTTP")) color = COLOR_PRIMARY;
+            else if (item.type.contains("URL")) color = COLOR_ACCENT;
+            else if (item.type.contains("SOCKET")) color = COLOR_DANGER;
+        }
+
+        // 容器（可滚动）
+        ScrollView sv = new ScrollView(this);
+        sv.setPadding(0, 0, 0, 0);
+
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(dp(20), dp(16), dp(20), dp(12));
+
+        // 顶部：序号 + 类型
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hlp.bottomMargin = dp(14);
+        container.addView(header, hlp);
+
+        // 序号圆章
+        LinearLayout circle = new LinearLayout(this);
+        GradientDrawable circBg = new GradientDrawable();
+        circBg.setColor(color);
+        circBg.setCornerRadius(dp(18));
+        circle.setBackground(circBg);
+        circle.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams circLp = new LinearLayout.LayoutParams(dp(36), dp(36));
+        circLp.setMargins(0, 0, dp(12), 0);
+        circle.setLayoutParams(circLp);
+        TextView num = new TextView(this);
+        num.setText(String.valueOf(index));
+        num.setTextSize(15);
+        num.setTextColor(0xFFFFFFFF);
+        num.setTypeface(null, android.graphics.Typeface.BOLD);
+        num.setGravity(Gravity.CENTER);
+        circle.addView(num);
+        header.addView(circle);
+
+        LinearLayout headerTexts = new LinearLayout(this);
+        headerTexts.setOrientation(LinearLayout.VERTICAL);
+        headerTexts.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView typeTv = new TextView(this);
+        typeTv.setText(item.type != null ? item.type.toUpperCase() : "UNKNOWN");
+        typeTv.setTextSize(13);
+        typeTv.setTextColor(color);
+        typeTv.setTypeface(null, android.graphics.Typeface.BOLD);
+        typeTv.setAllCaps(true);
+        headerTexts.addView(typeTv);
+
+        TextView timeLabel = new TextView(this);
+        timeLabel.setText(formatFullTime(item.time));
+        timeLabel.setTextSize(11);
+        timeLabel.setTextColor(COLOR_TEXT_SECONDARY);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tlp.topMargin = dp(2);
+        headerTexts.addView(timeLabel, tlp);
+
+        header.addView(headerTexts);
+
+        // 分隔线
+        View divider = new View(this);
+        GradientDrawable dd = new GradientDrawable();
+        dd.setColor(0xFFE0E4EC);
+        divider.setBackground(dd);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        dlp.bottomMargin = dp(12);
+        container.addView(divider, dlp);
+
+        // "URL" 标题
+        TextView urlLabel = new TextView(this);
+        urlLabel.setText("完整请求 URL");
+        urlLabel.setTextSize(12);
+        urlLabel.setTextColor(COLOR_PRIMARY_DARK);
+        urlLabel.setTypeface(null, android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams ullp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        ullp.bottomMargin = dp(8);
+        container.addView(urlLabel, ullp);
+
+        // URL 内容
+        TextView urlContent = new TextView(this);
+        urlContent.setText(item.url != null ? item.url : "(空)");
+        urlContent.setTextSize(12);
+        urlContent.setTextColor(COLOR_TEXT_PRIMARY);
+        urlContent.setAutoLinkMask(Linkify.WEB_URLS);
+        urlContent.setLinksClickable(true);
+        urlContent.setLineSpacing(dp(2), 1f);
+        GradientDrawable urlBox = new GradientDrawable();
+        urlBox.setColor(0xFFFAFBFC);
+        urlBox.setCornerRadius(dp(8));
+        urlBox.setStroke(dp(1), 0xFFE0E4EC);
+        urlContent.setBackground(urlBox);
+        urlContent.setPadding(dp(12), dp(12), dp(12), dp(12));
+        LinearLayout.LayoutParams uclp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        uclp.bottomMargin = dp(10);
+        container.addView(urlContent, uclp);
+
+        // 长度信息
+        TextView lengthTv = new TextView(this);
+        lengthTv.setText("字符长度: " + (item.url != null ? item.url.length() : 0));
+        lengthTv.setTextSize(11);
+        lengthTv.setTextColor(COLOR_TEXT_SECONDARY);
+        lengthTv.setGravity(Gravity.RIGHT);
+        container.addView(lengthTv);
+
+        sv.addView(container);
+
+        // 创建对话框
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("请求详情");
+        builder.setView(sv);
+        builder.setPositiveButton("复制 URL", new android.content.DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(android.content.DialogInterface dialog, int which) {
+                try {
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                            getSystemService(Context.CLIPBOARD_SERVICE);
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("url", item.url));
+                    Toast.makeText(MainActivity.this, "已复制到剪贴板", Toast.LENGTH_SHORT).show();
+                } catch (Throwable t) {
+                    Toast.makeText(MainActivity.this, "复制失败: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+        builder.setNegativeButton("关闭", null);
+
+        AlertDialog dialog = builder.create();
+        dialog.show();
+
+        // 美化按钮颜色
+        try {
+            Button posBtn = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            posBtn.setTextColor(COLOR_PRIMARY_DARK);
+            posBtn.setTextSize(13);
+            Button negBtn = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+            negBtn.setTextColor(COLOR_TEXT_SECONDARY);
+            negBtn.setTextSize(13);
+        } catch (Throwable ignored) {}
     }
 
     // ============ 说明卡 ============
@@ -763,9 +1048,10 @@ public class MainActivity extends Activity {
         content.addView(title);
 
         TextView body = new TextView(this);
-        body.setText("1. LSPosed 在目标应用启动时注入 Hook 代码\n2. Hook WebView.shouldInterceptRequest 拦截 API 请求\n3. 当检测到题目接口（包含 getQuestion）时，修改 JSON 将正确选项加上「正确答案」标识\n4. 修改后的数据通过 ContentProvider 保存在模块进程中（跨进程共享）\n5. 本应用查询 ContentProvider 读取统计数据");
+        body.setText("1. LSPosed 在目标应用启动时注入 Hook 代码\n2. Hook WebView.shouldInterceptRequest 拦截 API 请求\n3. 当检测到题目接口时，修改 JSON 将正确选项加上标识\n4. 统计数据通过 ContentProvider 写入模块进程\n5. 本应用查询 ContentProvider 读取并展示统计\n\n• 每页显示 " + PAGE_SIZE + " 条请求记录，点击分页按钮翻页\n• 点击任意记录可查看完整 URL，或复制到剪贴板");
         body.setTextSize(12);
         body.setTextColor(COLOR_TEXT_SECONDARY);
+        body.setLineSpacing(dp(2), 1f);
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         bp.topMargin = dp(10);
@@ -775,91 +1061,22 @@ public class MainActivity extends Activity {
         root.addView(card, cardParams());
     }
 
-    // ============ 列表行 ============
-    private View makeListItem(int index, String mainText, String typeLabel, int color) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xFFFFFFFF);
-        bg.setCornerRadius(dp(8));
-        bg.setStroke(dp(1), 0xFFE0E4EC);
-        row.setBackground(bg);
-        row.setPadding(dp(12), dp(10), dp(12), dp(10));
-
-        // 序号圆章
-        LinearLayout circle = new LinearLayout(this);
-        GradientDrawable circBg = new GradientDrawable();
-        circBg.setColor(color);
-        circBg.setCornerRadius(dp(14));
-        circle.setBackground(circBg);
-        circle.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams circLp = new LinearLayout.LayoutParams(dp(28), dp(28));
-        circLp.gravity = Gravity.CENTER_VERTICAL;
-        circle.setLayoutParams(circLp);
-
-        TextView num = new TextView(this);
-        num.setText(String.valueOf(index));
-        num.setTextSize(13);
-        num.setTextColor(0xFFFFFFFF);
-        num.setTypeface(null, android.graphics.Typeface.BOLD);
-        num.setGravity(Gravity.CENTER);
-        circle.addView(num);
-
-        row.addView(circle);
-
-        // 右侧文本区
-        LinearLayout textArea = new LinearLayout(this);
-        textArea.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams tap = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        tap.leftMargin = dp(12);
-        tap.gravity = Gravity.CENTER_VERTICAL;
-        textArea.setLayoutParams(tap);
-
-        if (typeLabel != null && !typeLabel.isEmpty()) {
-            TextView typeTv = new TextView(this);
-            typeTv.setText(typeLabel);
-            typeTv.setTextSize(11);
-            typeTv.setTextColor(color);
-            typeTv.setTypeface(null, android.graphics.Typeface.BOLD);
-            typeTv.setAllCaps(true);
-            textArea.addView(typeTv);
-        }
-
-        TextView mainTv = new TextView(this);
-        mainTv.setText(mainText);
-        mainTv.setTextSize(11);
-        mainTv.setTextColor(COLOR_TEXT_PRIMARY);
-        LinearLayout.LayoutParams mtp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        if (typeLabel != null && !typeLabel.isEmpty()) mtp.topMargin = dp(2);
-        textArea.addView(mainTv, mtp);
-
-        row.addView(textArea);
-        return row;
-    }
-
-    // ============ 卡片工具 ============
+    // ============ 工具方法 ============
     private LinearLayout createCard() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackgroundColor(COLOR_CARD);
-
         GradientDrawable gd = new GradientDrawable();
         gd.setColor(COLOR_CARD);
         gd.setCornerRadius(dp(12));
         gd.setStroke(dp(1), 0xFFE0E4EC);
         card.setBackground(gd);
-
         return card;
     }
 
     private View createColorStrip(int color) {
         View strip = new View(this);
-        strip.setBackgroundColor(color);
         GradientDrawable gd = new GradientDrawable();
         gd.setColor(color);
-        // 顶部圆角跟随卡片
         gd.setCornerRadii(new float[]{dp(12), dp(12), dp(12), dp(12), 0, 0, 0, 0});
         strip.setBackground(gd);
         LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
@@ -906,6 +1123,16 @@ public class MainActivity extends Activity {
             return sdf.format(new Date(t));
         } catch (Throwable ignored) {
             return "已检测";
+        }
+    }
+
+    private String formatFullTime(long t) {
+        if (t <= 0) return "时间未知";
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            return sdf.format(new Date(t));
+        } catch (Throwable ignored) {
+            return "时间未知";
         }
     }
 
@@ -958,9 +1185,7 @@ public class MainActivity extends Activity {
             if (am != null) am.killBackgroundProcesses(TARGET_PACKAGE);
         } catch (Throwable ignored) {}
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                Runtime.getRuntime().exec("killall " + TARGET_PACKAGE);
-            }
+            Runtime.getRuntime().exec("killall " + TARGET_PACKAGE);
         } catch (Throwable ignored) {}
         Toast.makeText(this, "已发送 kill 命令，请再次启动目标应用", Toast.LENGTH_SHORT).show();
     }

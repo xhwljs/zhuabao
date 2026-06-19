@@ -691,6 +691,8 @@ public class XposedInit implements IXposedHookLoadPackage {
                     Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
                     if (ctx == null) return;
                     ContentValues values = new ContentValues();
+                    values.put("hook_installed_count", hookInstalledCount.get());
+                    values.put("module_active_v1", true);
                     values.put("target_hit_count", targetHitCounter.get());
                     values.put("request_count", requestCounter.get());
                     values.put("last_hook_time", System.currentTimeMillis());
@@ -702,7 +704,9 @@ public class XposedInit implements IXposedHookLoadPackage {
                         if (ctx != null) {
                             android.content.SharedPreferences sp = ctx.getSharedPreferences("answer_revealer_status",
                                     Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
-                            sp.edit().putInt("target_hit_count", targetHitCounter.get())
+                            sp.edit().putInt("hook_installed_count", hookInstalledCount.get())
+                                    .putBoolean("module_active_v1", true)
+                                    .putInt("target_hit_count", targetHitCounter.get())
                                     .putInt("request_count", requestCounter.get())
                                     .putLong("last_hook_time", System.currentTimeMillis())
                                     .apply();
