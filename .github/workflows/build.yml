@@ -26,20 +26,41 @@ jobs:
           touch local.properties
           echo "sdk.dir=$ANDROID_HOME" >> local.properties
 
-      - name: Download Gradle
+      - name: Generate Gradle Wrapper
         run: |
           mkdir -p gradle/wrapper
-          curl -sL https://services.gradle.org/distributions/gradle-8.4-bin.zip -o /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d /tmp
-          echo "/tmp/gradle-8.4/bin/gradle" > gradle-bin
-          chmod +x gradle-bin
+          # 使用 gradle 命令生成 wrapper
+          gradle wrapper --gradle-version 8.4 --distribution-type bin || true
+          chmod +x gradlew 2>/dev/null || true
+
+      - name: Download Gradle (fallback)
+        run: |
+          if [ ! -f "gradlew" ]; then
+            curl -sL https://services.gradle.org/distributions/gradle-8.4-bin.zip -o /tmp/gradle.zip
+            unzip -q /tmp/gradle.zip -d /tmp
+            echo "GRADLE_BIN=/tmp/gradle-8.4/bin/gradle" >> $GITHUB_ENV
+          else
+            echo "GRADLE_BIN=./gradlew" >> $GITHUB_ENV
+          fi
 
       - name: Build debug APK
-        run: /tmp/gradle-8.4/bin/gradle assembleDebug --no-daemon
+        run: |
+          if [ -f "gradlew" ]; then
+            ./gradlew assembleDebug --no-daemon
+          else
+            /tmp/gradle-8.4/bin/gradle assembleDebug --no-daemon
+          fi
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: AnswerRevealer-debug
           path: app/build/outputs/apk/debug/*.apk
-          retention-days: 7
+          retention-days: 30
+
+      - name: Upload APK to release (optional)
+        if: success() && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/debug/*.apk
