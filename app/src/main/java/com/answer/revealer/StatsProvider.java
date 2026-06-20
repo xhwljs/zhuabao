@@ -39,6 +39,7 @@ public class StatsProvider extends ContentProvider {
     public static final Uri URI_QUERY = Uri.withAppendedPath(URI_BASE, "query");
     public static final Uri URI_REQUEST = Uri.withAppendedPath(URI_BASE, "request");
     public static final Uri URI_CLEAR = Uri.withAppendedPath(URI_BASE, "clear");
+    public static final Uri URI_ANSWER = Uri.withAppendedPath(URI_BASE, "answer");
 
     private static final String SP_NAME = "module_stats";
     private static final String TAG = "StatsProvider";
@@ -51,6 +52,8 @@ public class StatsProvider extends ContentProvider {
     public static final String KEY_DETECTED_CLIENTS = "detected_clients";
     public static final String KEY_PKG_HOOKED = "package_hooked";
     public static final String KEY_AUTO_SELECT = "auto_select_enabled";
+    public static final String KEY_ANSWER_TEXT = "answer_text";
+    public static final String KEY_ANSWER_MARKED = "answer_marked_text";
 
     private static final String[] ALL_KEYS = {
             KEY_REQUEST_COUNT,
@@ -164,6 +167,19 @@ public class StatsProvider extends ContentProvider {
 
             String[] columns = {"key", "value", "value_str"};
             cursor = new MatrixCursor(columns);
+
+            // 支持 answer 路径：直接返回答案文本
+            if ("answer".equals(path)) {
+                String at = sp.getString(KEY_ANSWER_TEXT, "");
+                if (at != null && !at.isEmpty()) {
+                    cursor.newRow().add(KEY_ANSWER_TEXT).add(0L).add(at);
+                }
+                String mt = sp.getString(KEY_ANSWER_MARKED, "");
+                if (mt != null && !mt.isEmpty()) {
+                    cursor.newRow().add(KEY_ANSWER_MARKED).add(0L).add(mt);
+                }
+                return cursor;
+            }
 
             for (String key : ALL_KEYS) {
                 if (KEY_DETECTED_CLIENTS.equals(key) || KEY_PKG_HOOKED.equals(key)) {
