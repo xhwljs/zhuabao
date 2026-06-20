@@ -682,7 +682,7 @@ public class XposedInit implements IXposedHookLoadPackage {
 
     // ============ 安装自动选中 Hook（WebView + 原生UI） ============
     private void setupAutoSelectHooks(final ClassLoader cl) {
-        // === 1. WebView: onPageFinished → 注入 JS 点击正确答案 ===
+        // === 1. WebView: onPageFinished → 注入 JS 点击正确答案（多次延迟尝试） ===
         try {
             XposedHelpers.findAndHookMethod("android.webkit.WebViewClient", cl, "onPageFinished",
                     "android.webkit.WebView", String.class,
@@ -694,17 +694,37 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 final Object webView = param.args[0];
                                 if (webView == null) return;
 
-                                // 注入 JS：遍历所有元素的文本，找到包含"正确答案"的元素，向上找可点击父级并点击
-                                final String js = "(function(){var m='正确答案';var a=document.querySelectorAll('*');for(var i=0;i<a.length;i++){var t=a[i].innerText||a[i].textContent||'';if(t.indexOf(m)>=0){var c=a[i];for(var j=0;j<6&&c;j++){if(typeof c.click==='function'){try{c.click();return;}catch(e){}}c=c.parentElement;}}}})();";
+                                final String[] methods = {"loadUrl", "evaluateJavascript"};
+                                final long[] delays = {300, 800, 1500, 2500};
 
-                                // loadUrl 兼容所有 WebView 版本
-                                try {
-                                    XposedHelpers.callMethod(webView, "loadUrl", "javascript:" + js);
-                                } catch (Throwable ignored) {
-                                    // evaluateJavascript (API >= 19) 作为 fallback
-                                    try {
-                                        XposedHelpers.callMethod(webView, "evaluateJavascript", js, null);
-                                    } catch (Throwable ignored2) {}
+                                for (int i = 0; i < delays.length; i++) {
+                                    final int attempt = i + 1;
+                                    new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            try {
+                                                // 注入增强版 JS：多种点击方式
+                                                final String js = buildAutoClickJS();
+                                                boolean success = false;
+                                                for (String method : methods) {
+                                                    try {
+                                                        if ("loadUrl".equals(method)) {
+                                                            XposedHelpers.callMethod(webView, "loadUrl", "javascript:" + js);
+                                                        } else {
+                                                            XposedHelpers.callMethod(webView, "evaluateJavascript", js, null);
+                                                        }
+                                                        success = true;
+                                                        break;
+                                                    } catch (Throwable ignored) {}
+                                                }
+                                                if (success) {
+                                                    try {
+                                                        XposedBridge.log("[答案模块] WebView尝试" + attempt + "次 - 已注入JS");
+                                                    } catch (Throwable ignored) {}
+                                                }
+                                            } catch (Throwable ignored) {}
+                                        }
+                                    }, delays[i]);
                                 }
                             } catch (Throwable ignored) {}
                         }
@@ -716,7 +736,46 @@ public class XposedInit implements IXposedHookLoadPackage {
             try { XposedBridge.log("[答案模块] WebView onPageFinished hook失败: " + t.getMessage()); } catch (Throwable ignored) {}
         }
 
-        // === 2. Activity onResume → 扫描原生 UI 找正确答案并点击 ===
+        // === 2. WebView: shouldInterceptRequest 返回后延迟触发点击（答案数据已替换） ===
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "android.webkit.WebViewClient", cl, "shouldInterceptRequest",
+                    "android.webkit.WebView", "android.webkit.WebResourceRequest",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(final MethodHookParam param) {
+                            try {
+                                if (!readAutoSelectEnabled()) return;
+                                Object result = param.getResult();
+                                if (result == null) return;
+
+                                final Object webView = param.args[0];
+                                if (webView == null) return;
+
+                                // 返回了修改后的响应，延迟触发点击
+                                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        try {
+                                            String js = buildAutoClickJS();
+                                            try {
+                                                XposedHelpers.callMethod(webView, "loadUrl", "javascript:" + js);
+                                            } catch (Throwable ignored) {
+                                                XposedHelpers.callMethod(webView, "evaluateJavascript", js, null);
+                                            }
+                                            try {
+                                                XposedBridge.log("[答案模块] WebView.shouldInterceptRequest - 触发自动点击");
+                                            } catch (Throwable ignored) {}
+                                            showToastSafe("✓ 自动选中正确答案");
+                                        } catch (Throwable ignored) {}
+                                    }
+                                }, 1000);
+                            } catch (Throwable ignored) {}
+                        }
+                    });
+        } catch (Throwable ignored) {}
+
+        // === 3. Activity onResume → 扫描原生 UI 找正确答案并点击 ===
         try {
             XposedHelpers.findAndHookMethod("android.app.Activity", cl, "onResume",
                     new XC_MethodHook() {
@@ -727,19 +786,25 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 final Object activityObj = param.thisObject;
                                 if (activityObj == null) return;
 
-                                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        try {
-                                            Object window = XposedHelpers.callMethod(activityObj, "getWindow");
-                                            if (window == null) return;
-                                            Object decorView = XposedHelpers.callMethod(window, "getDecorView");
-                                            if (decorView instanceof View) {
-                                                clickViewWithMarker((View) decorView);
-                                            }
-                                        } catch (Throwable ignored) {}
-                                    }
-                                }, 500);
+                                final long[] delays = {500, 1200, 2000};
+                                for (int i = 0; i < delays.length; i++) {
+                                    final int attempt = i + 1;
+                                    new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            try {
+                                                Object window = XposedHelpers.callMethod(activityObj, "getWindow");
+                                                if (window == null) return;
+                                                Object decorView = XposedHelpers.callMethod(window, "getDecorView");
+                                                if (decorView instanceof View) {
+                                                    if (clickViewWithMarkerEnhanced((View) decorView, "Activity.onResume[" + attempt + "]")) {
+                                                        return;
+                                                    }
+                                                }
+                                            } catch (Throwable ignored) {}
+                                        }
+                                    }, delays[i]);
+                                }
                             } catch (Throwable ignored) {}
                         }
                     });
@@ -750,7 +815,7 @@ public class XposedInit implements IXposedHookLoadPackage {
             try { XposedBridge.log("[答案模块] Activity onResume hook失败: " + t.getMessage()); } catch (Throwable ignored) {}
         }
 
-        // === 3. TextView setText → 检测动态内容包含"正确答案"时点击父容器 ===
+        // === 4. TextView setText → 检测动态内容包含"正确答案"时点击父容器 ===
         try {
             XposedHelpers.findAndHookMethod("android.widget.TextView", cl, "setText",
                     CharSequence.class, android.widget.TextView.BufferType.class,
@@ -765,27 +830,31 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 final Object tvObj = param.thisObject;
                                 if (!(tvObj instanceof View)) return;
 
-                                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        try {
-                                            View cur = (View) tvObj;
-                                            for (int i = 0; i < 6; i++) {
-                                                if (cur == null) break;
-                                                if (cur.isClickable() && cur.isEnabled()) {
-                                                    cur.performClick();
-                                                    return;
+                                final long[] delays = {300, 800, 1500};
+                                for (int i = 0; i < delays.length; i++) {
+                                    final int attempt = i + 1;
+                                    new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            try {
+                                                View cur = (View) tvObj;
+                                                for (int j = 0; j < 6; j++) {
+                                                    if (cur == null) break;
+                                                    if (cur.isClickable() && cur.isEnabled()) {
+                                                        boolean clicked = performEnhancedClick(cur, "TextView.setText[" + attempt + "]");
+                                                        if (clicked) return;
+                                                    }
+                                                    Object parent = cur.getParent();
+                                                    if (parent instanceof View) {
+                                                        cur = (View) parent;
+                                                    } else {
+                                                        break;
+                                                    }
                                                 }
-                                                Object parent = cur.getParent();
-                                                if (parent instanceof View) {
-                                                    cur = (View) parent;
-                                                } else {
-                                                    break;
-                                                }
-                                            }
-                                        } catch (Throwable ignored) {}
-                                    }
-                                }, 300);
+                                            } catch (Throwable ignored) {}
+                                        }
+                                    }, delays[i]);
+                                }
                             } catch (Throwable ignored) {}
                         }
                     });
@@ -795,24 +864,156 @@ public class XposedInit implements IXposedHookLoadPackage {
         } catch (Throwable t) {
             try { XposedBridge.log("[答案模块] TextView setText hook失败: " + t.getMessage()); } catch (Throwable ignored) {}
         }
+
+        // === 5. View performClick 拦截 → 记录点击事件（调试用） ===
+        try {
+            XposedHelpers.findAndHookMethod("android.view.View", cl, "performClick",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            try {
+                                Object view = param.thisObject;
+                                if (view instanceof TextView) {
+                                    TextView tv = (TextView) view;
+                                    String text = tv.getText() != null ? tv.getText().toString() : "";
+                                    if (text.contains(ANSWER_MARKER)) {
+                                        try {
+                                            XposedBridge.log("[答案模块] performClick 命中正确答案: " + text.substring(0, Math.min(50, text.length())));
+                                        } catch (Throwable ignored) {}
+                                    }
+                                }
+                            } catch (Throwable ignored) {}
+                        }
+                    });
+        } catch (Throwable ignored) {}
     }
 
-    // ============ 递归扫描视图树，点击含"正确答案"标记的元素 ============
-    private static void clickViewWithMarker(View view) {
-        if (view == null) return;
+    // ============ 构建增强版自动点击 JS ============
+    private String buildAutoClickJS() {
+        return "(function(){" +
+            "var m='正确答案';" +
+            "var found=false;" +
+            "var elements=document.querySelectorAll('*');" +
+            "for(var i=0;i<elements.length;i++){" +
+                "var e=elements[i];" +
+                "var t=e.innerText||e.textContent||'';" +
+                "if(t.indexOf(m)>=0){" +
+                    "found=true;" +
+                    "var c=e;" +
+                    "for(var j=0;j<8&&c;j++){" +
+                        "if(c.tagName&&(c.tagName==='BUTTON'||c.tagName==='DIV'||c.tagName==='SPAN')){" +
+                            "var style=window.getComputedStyle(c);" +
+                            "if(style&&style.cursor==='pointer'){" +
+                                "if(typeof c.click==='function'){" +
+                                    "c.click();" +
+                                    "console.log('[答案模块] JS点击成功(tagName)');" +
+                                    "return;" +
+                                "}" +
+                            "}" +
+                        "}" +
+                        "if(typeof c.click==='function'){" +
+                            "try{" +
+                                "c.click();" +
+                                "console.log('[答案模块] JS点击成功(click)');" +
+                                "return;" +
+                            "}catch(e){}" +
+                        "}" +
+                        "if(typeof c.dispatchEvent==='function'){" +
+                            "try{" +
+                                "var evt=new MouseEvent('click',{bubbles:true,cancelable:true,view:window});" +
+                                "c.dispatchEvent(evt);" +
+                                "console.log('[答案模块] JS点击成功(dispatchEvent)');" +
+                                "return;" +
+                            "}catch(e){}" +
+                        "}" +
+                        "c=c.parentElement;" +
+                    "}" +
+                "}" +
+            "}" +
+            "if(!found)console.log('[答案模块] JS未找到包含标记的元素');" +
+        "})();";
+    }
+
+    // ============ 增强版点击：多种方式尝试 ============
+    private static boolean performEnhancedClick(View view, String source) {
+        if (view == null) return false;
         try {
-            // 检查当前 view 是否 TextView，文本是否包含标记
+            try {
+                XposedBridge.log("[答案模块] [" + source + "] 尝试点击: " + getViewInfo(view));
+            } catch (Throwable ignored) {}
+
+            // 方式1: performClick
+            try {
+                if (view.performClick()) {
+                    try { XposedBridge.log("[答案模块] [" + source + "] 点击成功: performClick"); } catch (Throwable ignored) {}
+                    showToastSafe("✓ [" + source + "] 自动选中");
+                    return true;
+                }
+            } catch (Throwable ignored) {}
+
+            // 方式2: 反射调用 dispatchTouchEvent
+            try {
+                Class<?> motionEventCls = Class.forName("android.view.MotionEvent");
+                Object downEvent = XposedHelpers.callStaticMethod(motionEventCls, "obtain",
+                        System.currentTimeMillis(), System.currentTimeMillis(), 0,
+                        (float) view.getWidth() / 2, (float) view.getHeight() / 2, 0);
+                Object upEvent = XposedHelpers.callStaticMethod(motionEventCls, "obtain",
+                        System.currentTimeMillis(), System.currentTimeMillis(), 1,
+                        (float) view.getWidth() / 2, (float) view.getHeight() / 2, 0);
+                XposedHelpers.callMethod(view, "dispatchTouchEvent", downEvent);
+                XposedHelpers.callMethod(view, "dispatchTouchEvent", upEvent);
+                try { XposedBridge.log("[答案模块] [" + source + "] 点击成功: dispatchTouchEvent"); } catch (Throwable ignored) {}
+                showToastSafe("✓ [" + source + "] 自动选中");
+                return true;
+            } catch (Throwable ignored) {}
+
+            // 方式3: 反射调用 setPressed + invalidate
+            try {
+                view.setPressed(true);
+                view.invalidate();
+                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        view.setPressed(false);
+                        view.invalidate();
+                    }
+                }, 100);
+            } catch (Throwable ignored) {}
+
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    // ============ 获取视图信息（调试用） ============
+    private static String getViewInfo(View view) {
+        if (view == null) return "null";
+        try {
+            String className = view.getClass().getSimpleName();
+            String text = "";
+            if (view instanceof TextView) {
+                text = ((TextView) view).getText() != null ? ((TextView) view).getText().toString() : "";
+            }
+            return className + " clickable=" + view.isClickable() + " enabled=" + view.isEnabled() + " text=" + text.substring(0, Math.min(30, text.length()));
+        } catch (Throwable t) {
+            return view.getClass().getSimpleName();
+        }
+    }
+
+    // ============ 递归扫描视图树，点击含"正确答案"标记的元素（增强版） ============
+    private static boolean clickViewWithMarkerEnhanced(View view, String source) {
+        if (view == null) return false;
+        try {
             if (view instanceof TextView) {
                 TextView tv = (TextView) view;
                 CharSequence text = tv.getText();
                 if (text != null && text.toString().contains(ANSWER_MARKER)) {
-                    // 向上找可点击的父元素
                     View cur = tv;
-                    for (int i = 0; i < 6; i++) {
+                    for (int i = 0; i < 8; i++) {
                         if (cur == null) break;
                         if (cur.isClickable() && cur.isEnabled()) {
-                            cur.performClick();
-                            return;
+                            if (performEnhancedClick(cur, source)) {
+                                return true;
+                            }
                         }
                         Object parent = cur.getParent();
                         if (parent instanceof View) {
@@ -823,15 +1024,17 @@ public class XposedInit implements IXposedHookLoadPackage {
                     }
                 }
             }
-            // 递归遍历子元素
             if (view instanceof ViewGroup) {
                 ViewGroup vg = (ViewGroup) view;
                 for (int i = 0; i < vg.getChildCount(); i++) {
                     View child = vg.getChildAt(i);
-                    clickViewWithMarker(child);
+                    if (clickViewWithMarkerEnhanced(child, source)) {
+                        return true;
+                    }
                 }
             }
         } catch (Throwable ignored) {}
+        return false;
     }
 
     // ============ 写入 ContentProvider ============
