@@ -1107,45 +1107,36 @@ public class XposedInit implements IXposedHookLoadPackage {
 
         // dc(el)：终极点击（多选题时可多次点击，单选时只点一次）
         sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el)return;SEL++;");
-        sb.append("FOUND=TAG+' tag='+el.tagName+' cls='+(el.className||'')+' txt='+(el.innerText||el.value||'').toString().substring(0,30);");
-        sb.append("l('★CLICK! '+FOUND);");
-        sb.append("try{el.checked=true;el.setAttribute('checked','checked');}catch(e){}");
+        sb.append("l('★CLICK! tag='+el.tagName+' cls='+(el.className||'')+' txt='+(el.innerText||el.value||'').substring(0,30));");
+        // 先尝试直接选中 input（checkbox/radio）
+        sb.append("try{if(el.tagName==='INPUT'){el.checked=true;el.setAttribute('checked','checked');try{el.focus();}catch(e){}}}catch(e){}");
+        // 再尝试 click 元素本身
         sb.append("try{if(el.click)el.click();}catch(e){}");
-        sb.append("try{var p=el;for(var z=0;z<20;z++){if(!p)break;if(p.tagName==='INPUT'||p.tagName==='BUTTON'||p.tagName==='LABEL'||p.onclick!=null||p.getAttribute&&p.getAttribute('onclick')){if(p!==el){try{p.click();}catch(e){}}break;}p=p.parentElement;}}catch(e){}");
+        // 向上查找：找父元素中带 onclick 或 INPUT/BUTTON/LABEL 的（label for 关联 input）
+        sb.append("try{var p=el;for(var z=0;z<15;z++){if(!p)break;if(p!==el&&(p.onclick||(p.getAttribute&&p.getAttribute('onclick'))||p.tagName==='INPUT'||p.tagName==='BUTTON'||p.tagName==='LABEL')){try{p.click();}catch(e){}try{if(p.tagName==='INPUT'){p.checked=true;}}catch(e){}break;}p=p.parentElement;}}catch(e){}");
+        // 全面事件派发（mouse 事件链 + change + input）
         sb.append("try{var evs=['click','mousedown','mouseup','change','input'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
+        // 标绿作为执行成功的可视化标记
         sb.append("try{el.style.backgroundColor='#4CAF50';el.style.color='#fff';}catch(e){}");
-        sb.append("l('DC:done SEL='+SEL);}");
+        sb.append("}");
 
-        // fc(el)：从元素向上找可点击的元素（多选题时不限制单次）
+        // fc(el)：从元素向上找可点击的元素（多选题时不限制单次点击）
         sb.append("function fc(el){if(!IS_MULTI&&SEL>0)return;l('FC:from '+el.tagName);");
         sb.append("var cur=el;for(var li=0;li<25;li++){if(!cur)break;");
-        sb.append("var tn=cur.tagName;if(tn==='INPUT'||tn==='BUTTON'||tn==='LABEL'||tn==='A'||tn==='SELECT'||tn==='TEXTAREA'){l('FC:input '+tn);dc(cur);return;}");
-        sb.append("if(cur.onclick||cur.getAttribute&&cur.getAttribute('onclick')){l('FC:onclick '+tn);dc(cur);return;}");
-        sb.append("var inps=cur.querySelectorAll?cur.querySelectorAll('input,button,label,[onclick]'):null;if(inps&&inps.length>0){for(var xi=0;xi<inps.length;xi++){try{dc(inps[xi]);if(SEL>0)return;}catch(e){}}}");
+        sb.append("var tn=cur.tagName;if(tn==='INPUT'||tn==='BUTTON'||tn==='LABEL'||tn==='A'||tn==='SELECT'||tn==='TEXTAREA'){l('FC:input '+tn);dc(cur);if(!IS_MULTI)return;}");
+        sb.append("if(cur.onclick||(cur.getAttribute&&cur.getAttribute('onclick'))){l('FC:onclick '+tn);dc(cur);if(!IS_MULTI)return;}");
+        sb.append("var inps=cur.querySelectorAll?cur.querySelectorAll('input,button,label,[onclick]'):null;if(inps&&inps.length>0){for(var xi=0;xi<inps.length;xi++){try{dc(inps[xi]);if(!IS_MULTI&&SEL>0)return;}catch(e){}}}");
         sb.append("cur=cur.parentElement;}");
         sb.append("l('FC:fallback click');dc(el);}");
 
-        // 策略1：TreeWalker 找"正确答案"标记（多选题：遍历全部；单选题：找到即停）
+        // 策略1：TreeWalker 找"正确答案"标记 → 对每个匹配项调用 fc()（多选题遍历全部）
         sb.append("l('v8 start AT='+AT+' MULTI='+IS_MULTI);");
         sb.append("if(!D.body){l('body null');}else{");
         sb.append("var matches=[];var tw=D.createTreeWalker(D.body,NodeFilter.SHOW_TEXT,null,false);");
         sb.append("var node;while(node=tw.nextNode()){if(node.nodeValue&&node.nodeValue.indexOf('正确答案')>=0){var p=node.parentElement;if(p){matches.push(p);}}}");
         sb.append("l('策略1:匹配'+matches.length+'个');");
-        sb.append("function clickOne(el){try{");
-        sb.append("SEL++;l('★CLICK! tag='+el.tagName+' txt='+(el.innerText||el.value||'').substring(0,30));");
-        sb.append("try{el.checked=true;el.setAttribute('checked','checked');}catch(e){}");
-        sb.append("try{if(el.click)el.click();}catch(e){}");
-        sb.append("try{var p=el;for(var z=0;z<15;z++){if(!p)break;if(p.onclick||(p.getAttribute&&p.getAttribute('onclick'))||p.tagName==='INPUT'||p.tagName==='BUTTON'||p.tagName==='LABEL'){if(p!==el){try{p.click();}catch(e){}}break;}p=p.parentElement;}}catch(e){}");
-        sb.append("try{var evs=['click','mousedown','mouseup','change','input'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
-        sb.append("try{el.style.backgroundColor='#4CAF50';el.style.color='#fff';}catch(e){}");
-        sb.append("}catch(e){}}");
-        // 遍历每个匹配：先找元素本身或子元素/父元素中的可点击元素，找到则调用 clickOne
-        sb.append("for(var mi=0;mi<matches.length;mi++){try{var em=matches[mi];var tgt=null;");
-        sb.append("if(em.tagName==='INPUT'||em.tagName==='BUTTON'||em.tagName==='LABEL'||em.onclick||(em.getAttribute&&em.getAttribute('onclick')))tgt=em;");
-        sb.append("if(!tgt){var child=em.querySelector?em.querySelector('input,button,label,[onclick]'):null;if(child)tgt=child;}");
-        sb.append("if(!tgt){var pc=em;for(var zi=0;zi<20;zi++){if(!pc)break;if(pc.tagName==='INPUT'||pc.tagName==='BUTTON'||pc.tagName==='LABEL'||pc.onclick||(pc.getAttribute&&pc.getAttribute('onclick'))){tgt=pc;break;}pc=pc.parentElement;}}");
-        sb.append("if(tgt){clickOne(tgt);if(!IS_MULTI)break;}else{clickOne(em);if(!IS_MULTI)break;}");
-        sb.append("}catch(e){}}");
+        // 关键：对每个匹配项调用 fc() —— fc 内部有完整的子元素+祖先元素查找链
+        sb.append("for(var mi=0;mi<matches.length;mi++){try{fc(matches[mi]);if(!IS_MULTI&&SEL>0)break;}catch(e){}l('策略1:第'+mi+'个处理完 SEL='+SEL);}");
 
         // 策略2：querySelectorAll 兜底
         sb.append("if(SEL===0){var all=D.body.querySelectorAll('*');l('策略2:scan '+all.length);");
