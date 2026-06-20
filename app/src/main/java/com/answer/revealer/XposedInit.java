@@ -1081,13 +1081,16 @@ public class XposedInit implements IXposedHookLoadPackage {
         // TAG: Java传进来的注入点标识，如 [onPageFinished-1500ms] 或 [shouldInterceptRequest-2500ms]
         sb.append("var TAG='").append(safeTag).append("';");
         sb.append("var AT='").append(safeA).append("';");
+        // IS_MULTI: 如果答案中有"、,;"分隔，或页面包含"多选/不定项"，则视为多选题→点击所有正确答案
+        sb.append("var IS_MULTI=(AT.indexOf('、')>=0||AT.indexOf(',')>=0||AT.indexOf(';')>=0);");
+        sb.append("if(!IS_MULTI){try{var pgTxt=D.body.innerText;if(pgTxt){IS_MULTI=(pgTxt.indexOf('多选')>=0||pgTxt.indexOf('不定项')>=0);}}catch(e){}}");
         sb.append("var D=document;var SEL=0;var FOUND='';");
 
         // l(msg)：三路日志（console.log + document.title + 内存LOG数组）
         sb.append("function l(m){try{console.log('[ANSWER]'+TAG+' '+m);}catch(e){}try{document.title=TAG+':'+String(m).substring(0,40);}catch(e){}}");
 
-        // dc(el)：终极点击
-        sb.append("function dc(el){if(SEL>0||!el)return;SEL++;");
+        // dc(el)：终极点击（多选题时可多次点击，单选时只点一次）
+        sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el)return;SEL++;");
         sb.append("FOUND=TAG+' tag='+el.tagName+' cls='+(el.className||'')+' txt='+(el.innerText||el.value||'').toString().substring(0,30);");
         sb.append("l('★CLICK! '+FOUND);");
         sb.append("try{el.checked=true;el.setAttribute('checked','checked');}catch(e){}");
@@ -1097,8 +1100,8 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("try{el.style.backgroundColor='#4CAF50';el.style.color='#fff';}catch(e){}");
         sb.append("l('DC:done SEL='+SEL);}");
 
-        // fc(el)：从元素向上找可点击的元素
-        sb.append("function fc(el){if(SEL>0)return;l('FC:from '+el.tagName);");
+        // fc(el)：从元素向上找可点击的元素（多选题时不限制单次）
+        sb.append("function fc(el){if(!IS_MULTI&&SEL>0)return;l('FC:from '+el.tagName);");
         sb.append("var cur=el;for(var li=0;li<25;li++){if(!cur)break;");
         sb.append("var tn=cur.tagName;if(tn==='INPUT'||tn==='BUTTON'||tn==='LABEL'||tn==='A'||tn==='SELECT'||tn==='TEXTAREA'){l('FC:input '+tn);dc(cur);return;}");
         sb.append("if(cur.onclick||cur.getAttribute&&cur.getAttribute('onclick')){l('FC:onclick '+tn);dc(cur);return;}");
@@ -1106,12 +1109,13 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("cur=cur.parentElement;}");
         sb.append("l('FC:fallback click');dc(el);}");
 
-        // 策略1：TreeWalker 找"正确答案"标记
-        sb.append("l('v8 start AT='+AT);");
+        // 策略1：TreeWalker 找"正确答案"标记（多选题时遍历所有匹配项）
+        sb.append("l('v8 start AT='+AT+' MULTI='+IS_MULTI);");
         sb.append("if(!D.body){l('body null');}else{");
-        sb.append("var tw=D.createTreeWalker(D.body,NodeFilter.SHOW_TEXT,null,false);");
-        sb.append("var node,mt=null;while(node=tw.nextNode()){if(node.nodeValue&&node.nodeValue.indexOf('正确答案')>=0){var p=node.parentElement;if(p){mt=p;l('策略1:找到 '+node.nodeValue.substring(0,40));break;}}}");
-        sb.append("if(mt){fc(mt);}else{l('策略1:未找到');}");
+        sb.append("var matches=[];var tw=D.createTreeWalker(D.body,NodeFilter.SHOW_TEXT,null,false);");
+        sb.append("var node;while(node=tw.nextNode()){if(node.nodeValue&&node.nodeValue.indexOf('正确答案')>=0){var p=node.parentElement;if(p){matches.push(p);}}}");
+        sb.append("l('策略1:匹配'+matches.length+'个');");
+        sb.append("for(var mi=0;mi<matches.length;mi++){try{fc(matches[mi]);}catch(e){}}");
 
         // 策略2：querySelectorAll 兜底
         sb.append("if(SEL===0){var all=D.body.querySelectorAll('*');l('策略2:scan '+all.length);");
@@ -1132,7 +1136,7 @@ public class XposedInit implements IXposedHookLoadPackage {
 
         // === 关键：在 try 块内返回明确格式的字符串！===
         // 这是 evaluateJavascript 的 ValueCallback 会捕获的值
-        sb.append("return(SEL>0?'[ANSWER]SUCCESS|'+TAG+'|SEL='+SEL+'|FOUND='+FOUND:'[ANSWER]FAIL|'+TAG+'|SEL=0|未找到可点击元素');");
+        sb.append("return(SEL>0?'[ANSWER]SUCCESS|'+TAG+'|MULTI='+IS_MULTI+'|SEL='+SEL+'|FOUND='+FOUND:'[ANSWER]FAIL|'+TAG+'|MULTI='+IS_MULTI+'|SEL=0|未找到可点击元素');");
 
         // 捕获异常后也返回字符串（失败情况）
         sb.append("}catch(e){try{console.log('[ANSWER]'+TAG+' TOPERR:'+e.message);}catch(e2){}try{document.title='[ERR]'+TAG+':'+e.message;}catch(e2){}");
