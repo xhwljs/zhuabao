@@ -80,6 +80,11 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static final AtomicInteger requestCounter = new AtomicInteger(0);
     private static final AtomicInteger targetHitCounter = new AtomicInteger(0);
 
+    // 存储当前题目的正确答案文本（用于 JS 直接选中）
+    private static volatile String sCorrectAnswerText = null;
+    // 存储当前正确答案标记文本（【 xxx 正确答案 】）
+    private static volatile String sMarkedAnswerText = null;
+
     private static volatile Context appContext;
 
     // ============ ActivityThread Context 获取 ============
@@ -599,7 +604,10 @@ public class XposedInit implements IXposedHookLoadPackage {
                 if (opt == null) continue;
                 if (opt.optInt("isRight") == 1) {
                     String text = opt.optString("optionText", "");
-                    opt.put("optionText", "【 " + text + " 正确答案 】");
+                    // 存储正确答案原始文本，供 JS 直接选中使用
+                    sCorrectAnswerText = text;
+                    sMarkedAnswerText = "【 " + text + " 正确答案 】";
+                    opt.put("optionText", sMarkedAnswerText);
                     changed = true;
                 }
             }
@@ -969,104 +977,122 @@ public class XposedInit implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {}
     }
 
-    // ============ 构建增强版自动点击 JS ============
+    // ============ 构建自动选中 JS（新方案：直接修改 checked 状态 + 触发 JS 事件）============
     private String buildAutoClickJS() {
-        // 注意：JS 中全部使用单引号 '，避免与 Java 字符串双引号冲突
+        // 从静态变量读取答案文本
+        String answerText = sCorrectAnswerText;
+        String markedText = sMarkedAnswerText;
+
+        String safeAnswer = answerText != null ? answerText.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "").trim() : "";
+        String safeMarked = markedText != null ? markedText.replace("\\", "\\\\").replace("'", "\\'") : "";
+
         StringBuilder js = new StringBuilder();
         js.append("(function(){");
-        js.append("var m='正确答案';");
-        js.append("var clicked=false;");
-        js.append("var foundCount=0;");
+        js.append("try{");
 
-        // ---- 辅助：尝试点击元素（多种方式）
-        js.append("function tryClick(el,src){");
-        js.append("if(!el||clicked)return false;");
-        js.append("var n=0;");
-        js.append("try{el.click();n++;}catch(e){}");
-        js.append("if(!clicked){try{");
-        js.append("var e1=new MouseEvent('click',{bubbles:true,cancelable:true,view:window});");
-        js.append("el.dispatchEvent(e1);n++;");
-        js.append("}catch(e){}}");
-        js.append("if(!clicked){try{");
-        js.append("var e2=new MouseEvent('mousedown',{bubbles:true,cancelable:true});");
-        js.append("el.dispatchEvent(e2);");
-        js.append("var e3=new MouseEvent('mouseup',{bubbles:true,cancelable:true});");
-        js.append("el.dispatchEvent(e3);n++;");
-        js.append("}catch(e){}}");
-        js.append("if(!clicked){try{");
-        js.append("var rect=el.getBoundingClientRect();");
-        js.append("var cx=rect.left+rect.width/2;");
-        js.append("var cy=rect.top+rect.height/2;");
-        js.append("var tp={bubbles:true,cancelable:true,touches:[{identifier:1,clientX:cx,clientY:cy,target:el}]};");
-        js.append("el.dispatchEvent(new TouchEvent('touchstart',tp));");
-        js.append("el.dispatchEvent(new TouchEvent('touchend',tp));n++;");
-        js.append("}catch(e){}}");
-        js.append("if(n>0){clicked=true;");
-        js.append("console.log('[答案模块] JS点击成功: '+src+' n='+n);");
-        js.append("return true;}");
-        js.append("return false;");
+        // ========== 阶段1：直接设置 checked=true + 触发 JS 事件（新核心方案）==========
+        js.append("var AT='" + safeAnswer + "';");
+        js.append("var AM='" + safeMarked + "';");
+        js.append("var selected=false;");
+
+        // 辅助：在元素上标记已选中（可视化反馈）
+        js.append("function mark(el){try{el.style.backgroundColor='#4CAF50';el.style.color='#fff';el.style.padding='2px 6px';el.style.borderRadius='4px';el.style.fontWeight='bold';}catch(e){}}");
+
+        // 辅助：直接选中（核心）
+        js.append("function doSelect(el){");
+        // 1) 直接设置 checked 属性
+        js.append("try{if(el.checked!==undefined){el.checked=true;mark(el);}}catch(e){}");
+        // 2) 将 checked 属性同步到 DOM property
+        js.append("try{if(el._setChecked)el._setChecked(true);}catch(e){}");
+        // 3) 触发 HTMLInputElement 的特有事件
+        js.append("try{var ev1=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'checked').set;if(ev1)ev1.call(el,true);}catch(e){}");
+        // 4) 触发 change 事件（React/Vue/jQuery 等框架监听此事件）
+        js.append("try{var ce=new Event('change',{bubbles:true,cancelable:true});el.dispatchEvent(ce);}catch(e){}");
+        // 5) 触发 input 事件（Vue 等框架监听此事件）
+        js.append("try{var ie=new Event('input',{bubbles:true,cancelable:true});el.dispatchEvent(ie);}catch(e){}");
+        // 6) 触发 React 的 syntheticEvent
+        js.append("try{var re=document.createEvent('Event');re.initEvent('reactChange',true,true);el.dispatchEvent(re);}catch(e){}");
+        // 7) 尝试调用元素的原生方法（如果有）
+        js.append("try{if(el._reactFiber&&el._reactFiber.alternate&&el._reactFiber.alternate.memoizedProps&&el._reactFiber.alternate.memoizedProps.onChange)el._reactFiber.alternate.memoizedProps.onChange({target:el,type:'change'});}catch(e){}");
+        js.append("selected=true;");
         js.append("}");
 
-        // ---- 扫描所有元素找含"正确答案"的
-        js.append("var all=document.querySelectorAll('*');");
-        js.append("var list=[];");
-        js.append("for(var i=0;i<all.length;i++){");
-        js.append("var el=all[i];");
-        js.append("var txt=(el.innerText||el.textContent||'').toString();");
-        js.append("if(txt.indexOf(m)>=0){list.push(el);}");
+        // ========== 阶段2：通过答案文本匹配 label → 找到对应的 input → 直接选中 ==========
+        js.append("try{");
+        js.append("var labels=document.querySelectorAll('label');");
+        js.append("for(var li=0;li<labels.length;li++){");
+        js.append("var lb=labels[li];");
+        js.append("var lt='';try{lt=(lb.innerText||lb.textContent||'').toString().trim();}catch(e){}");
+        js.append("if(AT&&lt.indexOf(AT)>=0){");
+        js.append("var inp=lb.querySelector('input[type=radio],input[type=checkbox]');");
+        js.append("if(inp){doSelect(inp);console.log('[答案模块] 直接选中(radio/checkbox匹配): '+lt);break;}");
         js.append("}");
-        js.append("foundCount=list.length;");
-        js.append("console.log('[答案模块] JS找到'+foundCount+'个含正确答案元素');");
+        js.append("}");
+        js.append("}catch(e){console.log('[答案模块] label匹配失败: '+e.message);}");
 
-        // ---- 对每个候选元素：打印信息 + 向上递归点击
-        js.append("for(var ci=0;ci<list.length&&!clicked;ci++){");
-        js.append("var cur=list[ci];");
-        js.append("try{console.log('[答案模块] 候选'+ci+': '+cur.tagName+' '+cur.innerText.substring(0,20));}catch(e){}");
+        // ========== 阶段3：通过 for 属性关联 label → input ==========
+        js.append("if(!selected){try{");
+        js.append("var allLabels=document.querySelectorAll('label[for]');");
+        js.append("for(var fi=0;fi<allLabels.length;fi++){");
+        js.append("var fl=allLabels[fi];");
+        js.append("var flt='';try{flt=(fl.innerText||fl.textContent||'').toString().trim();}catch(e){}");
+        js.append("if(AT&&flt.indexOf(AT)>=0){");
+        js.append("var fid=fl.getAttribute('for');");
+        js.append("var inp2=document.getElementById(fid);");
+        js.append("if(inp2){doSelect(inp2);console.log('[答案模块] 直接选中(for属性): '+flt);break;}");
+        js.append("}");
+        js.append("}");
+        js.append("}catch(e){console.log('[答案模块] for属性匹配失败: '+e.message);}}");
 
-        // 向上递归 20 层，每层都尝试点击
-        js.append("var up=cur;");
-        js.append("for(var lv=0;lv<20&&!clicked;lv++){");
-        js.append("if(!up)break;");
-        js.append("var info='';try{info=up.tagName;}catch(e){info='?';}");
-        js.append("if(tryClick(up,'F'+lv+'-'+info)){break;}");
-        js.append("up=up.parentElement;");
+        // ========== 阶段4：查找含答案文本的 div/span/li → 向上找最近的 input ==========
+        js.append("if(!selected){try{");
+        js.append("var all=document.querySelectorAll('div,span,li,p,td');");
+        js.append("for(var ai=0;ai<all.length;ai++){");
+        js.append("var el=all[ai];");
+        js.append("var txt='';try{txt=(el.innerText||el.textContent||'').toString().trim();}catch(e){}");
+        js.append("if(AT&&txt.indexOf(AT)>=0){");
+        js.append("var inp3=el.querySelector('input[type=radio],input[type=checkbox]');");
+        js.append("if(inp3){doSelect(inp3);console.log('[答案模块] 直接选中(子元素input): '+txt.substring(0,30));break;}");
+        js.append("var par=el.parentElement;");
+        js.append("for(var pi=0;pi<5&&par&&!selected;pi++){");
+        js.append("var sib=par.querySelector('input[type=radio],input[type=checkbox]');");
+        js.append("if(sib){doSelect(sib);console.log('[答案模块] 直接选中(兄弟input): '+txt.substring(0,30));break;}");
+        js.append("par=par.parentElement;}");
         js.append("}");
+        js.append("}");
+        js.append("}catch(e){console.log('[答案模块] 元素遍历失败: '+e.message);}}");
 
-        // 尝试点击父元素的所有子元素（答案可能在子容器的某个兄弟元素上）
-        js.append("if(!clicked){");
-        js.append("var p=cur.parentElement;");
-        js.append("if(p){");
-        js.append("var sibs=p.children;");
-        js.append("for(var si=0;sibs&&si<sibs.length&&!clicked;si++){");
-        js.append("var s=sibs[si];");
-        js.append("tryClick(s,'S'+si+'-'+s.tagName);");
+        // ========== 阶段5：通过标记文本（正确答案）找到元素并尝试点击 ==========
+        js.append("if(!selected){try{");
+        js.append("var all2=document.querySelectorAll('*');");
+        js.append("for(var bi=0;bi<all2.length;bi++){");
+        js.append("var el2=all2[bi];");
+        js.append("var txt2='';try{txt2=(el2.innerText||el2.textContent||'').toString();}catch(e){}");
+        js.append("if(AM&&txt2.indexOf(AM)>=0){");
+        js.append("mark(el2);console.log('[答案模块] 找到标记文本: '+txt2.substring(0,30));");
+        js.append("var cur=el2;for(var k=0;k<15&&cur&&!selected;k++){");
+        js.append("if(cur.tagName==='INPUT'){doSelect(cur);break;}");
+        js.append("var sib=cur.parentElement&&cur.parentElement.querySelector('input');");
+        js.append("if(sib){doSelect(sib);break;}");
+        js.append("cur=cur.parentElement;}");
         js.append("}");
         js.append("}");
-        js.append("}");
-        js.append("}");
+        js.append("}catch(e){console.log('[答案模块] 标记匹配失败: '+e.message);}}");
 
-        // ---- MutationObserver 监听后续变化（答案可能是动态加载的）
-        js.append("if(!clicked){try{");
-        js.append("var MutationObserver=window.MutationObserver||window.WebKitMutationObserver;");
-        js.append("var obs=new MutationObserver(function(muts){");
-        js.append("for(var mi=0;mi<muts.length&&!clicked;mi++){");
-        js.append("var m=muts[mi];");
-        js.append("var t=m.target;");
-        js.append("var txt2='';try{txt2=t.innerText||t.textContent||'';}catch(e){}");
-        js.append("if(txt2&&txt2.indexOf(m)>=0){");
-        js.append("var u=t;for(var lv2=0;lv2<15&&!clicked;lv2++){");
-        js.append("if(!u)break;if(tryClick(u,'M'+lv2+'-'+u.tagName)){obs.disconnect();return;}");
-        js.append("u=u.parentElement;");
-        js.append("}");
-        js.append("}");
-        js.append("}");
-        js.append("});");
+        // ========== 阶段6：MutationObserver 监听后续动态渲染 ==========
+        js.append("if(!selected&&window.MutationObserver){try{");
+        js.append("var obs=new MutationObserver(function(){");
+        js.append("var lab=document.querySelectorAll('label');");
+        js.append("for(var mi=0;mi<lab.length&&!selected;mi++){");
+        js.append("var l=lab[mi];var lt='';try{lt=(l.innerText||l.textContent||'').toString().trim();}catch(e){}");
+        js.append("if(AT&&lt.indexOf(AT)>=0){var inp=l.querySelector('input');if(inp){doSelect(inp);console.log('[答案模块] MutationObserver直接选中');}}});");
         js.append("obs.observe(document.body||document.documentElement,{childList:true,subtree:true,characterData:true});");
-        js.append("setTimeout(function(){obs.disconnect();},8000);");
-        js.append("console.log('[答案模块] MutationObserver 已启动');");
-        js.append("}catch(e){console.log('[答案模块] MutationObserver 失败: '+e.message);}}");
+        js.append("setTimeout(function(){try{obs.disconnect();}catch(e){}},15000);");
+        js.append("}catch(e){console.log('[答案模块] MutationObserver失败: '+e.message);}}");
 
-        js.append("console.log('[答案模块] JS扫描完毕 clicked='+clicked);");
+        // ========== 汇总结果 ==========
+        js.append("console.log('[答案模块] JS执行完毕 selected='+selected+(AT?' answer='+AT:''));");
+        js.append("}catch(e){console.log('[答案模块] JS异常: '+e.message);}");
         js.append("})();");
         return js.toString();
     }
