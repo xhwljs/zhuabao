@@ -381,6 +381,22 @@ public class XposedInit implements IXposedHookLoadPackage {
                                             injectJsIntoWebView(webViewObj, "[shouldInterceptRequest-延迟4000]");
                                         }
                                     }, 4000);
+
+                                    // === 新增：Java 层原生触摸（备选方案）===
+                                    if (sCorrectAnswerText != null && !sCorrectAnswerText.isEmpty()) {
+                                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                autoTouchWebView(webViewObj, sCorrectAnswerText, "[shouldInterceptRequest-原生触摸3000]");
+                                            }
+                                        }, 3000);
+                                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                autoTouchWebView(webViewObj, sCorrectAnswerText, "[shouldInterceptRequest-原生触摸5000]");
+                                            }
+                                        }, 5000);
+                                    }
                                 }
                             } catch (Throwable t) {
                                 try { XposedBridge.log("[答案模块] WebView shouldInterceptRequest 异常: " + t.getMessage()); } catch (Throwable ignored2) {}
@@ -765,7 +781,7 @@ public class XposedInit implements IXposedHookLoadPackage {
 
     // ============ 安装自动选中 Hook（WebView + 原生UI） ============
     private void setupAutoSelectHooks(final ClassLoader cl) {
-        // === 1. WebView: onPageFinished → 延迟注入 JS ============
+        // === 1. WebView: onPageFinished → 注入 JS + 原生触摸 ============
         try {
             XposedHelpers.findAndHookMethod("android.webkit.WebViewClient", cl, "onPageFinished",
                     "android.webkit.WebView", String.class,
@@ -784,12 +800,18 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
                                     @Override public void run() { injectJsIntoWebView(webView, "[onPageFinished-4000]"); }
                                 }, 4000);
+                                // 原生触摸
+                                if (sCorrectAnswerText != null && !sCorrectAnswerText.isEmpty()) {
+                                    new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                        @Override public void run() { autoTouchWebView(webView, sCorrectAnswerText, "[onPageFinished-触摸3500]"); }
+                                    }, 3500);
+                                }
                             } catch (Throwable ignored) {}
                         }
                     });
         } catch (Throwable ignored) {}
 
-        // === 2. WebView: shouldInterceptRequest after hook（备用注入点） ============
+        // === 2. WebViewClient.shouldInterceptRequest after hook（备用） ============
         try {
             XposedHelpers.findAndHookMethod("android.webkit.WebViewClient", cl, "shouldInterceptRequest",
                     "android.webkit.WebView", "android.webkit.WebResourceRequest",
@@ -800,7 +822,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 final Object webView = param.args[0];
                                 if (webView == null) return;
                                 Object result = param.getResult();
-                                // 只有返回了结果才尝试注入（说明请求可能被处理）
                                 if (result == null) return;
                                 new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
                                     @Override public void run() { injectJsIntoWebView(webView, "[shouldIntercept-1200]"); }
@@ -832,7 +853,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                     });
         } catch (Throwable ignored) {}
 
-        // === 4. WebView.onPageStarted → 延迟注入（覆盖页面刷新场景） ============
+        // === 4. WebView.onPageStarted → 延迟注入 ============
         try {
             XposedHelpers.findAndHookMethod("android.webkit.WebViewClient", cl, "onPageStarted",
                     "android.webkit.WebView", String.class, "android.graphics.Bitmap",
@@ -890,7 +911,7 @@ public class XposedInit implements IXposedHookLoadPackage {
             try { XposedBridge.log("[答案模块] Activity onResume hook失败: " + t.getMessage()); } catch (Throwable ignored) {}
         }
 
-        // === 6. TextView setText → 检测动态内容包含"正确答案"时点击父容器 ============
+        // === 6. TextView setText → 检测动态内容含"正确答案"时点击父容器 ============
         try {
             XposedHelpers.findAndHookMethod("android.widget.TextView", cl, "setText",
                     CharSequence.class, android.widget.TextView.BufferType.class,
@@ -933,113 +954,64 @@ public class XposedInit implements IXposedHookLoadPackage {
         }
     }
 
-    // ============ 统一的 JS 注入入口（简化版） ============
+    // ============ 统一的 JS 注入入口（多方式增强版） ============
     private static void injectJsIntoWebView(Object webViewObj, String sourceTag) {
         try {
             if (!readAutoSelectEnabled()) return;
             if (webViewObj == null) return;
 
-            // 检查答案文本
             String answerText = sCorrectAnswerText;
             if (answerText == null || answerText.isEmpty()) {
                 try { XposedBridge.log("[答案模块] " + sourceTag + " 跳过: 答案文本为空"); } catch (Throwable ignored) {}
                 return;
             }
 
-            // 检查答案是否过期（超过 30 秒不使用）
             long age = System.currentTimeMillis() - sCorrectAnswerTimestamp;
             if (sCorrectAnswerTimestamp > 0 && age > 30000) {
                 try { XposedBridge.log("[答案模块] " + sourceTag + " 跳过: 答案已过期(" + age + "ms)"); } catch (Throwable ignored) {}
                 return;
             }
 
-            // 安全转义
             String safeA = escapeJsString(answerText);
             String safeM = escapeJsString(sMarkedAnswerText != null ? sMarkedAnswerText : "");
+            final String js = buildAutoClickJS2(safeA, safeM);
 
-            // 核心 JS：5 个策略直接选中
-            StringBuilder sb = new StringBuilder();
-            sb.append("(function(){try{");
-            sb.append("var AT='").append(safeA).append("';var AM='").append(safeM).append("';");
-            sb.append("var sel=false;var D=document;");
-            sb.append("function doSel(el){try{el.checked=true;}catch(e){}");
-            sb.append("try{var ce=document.createEvent('HTMLEvents');ce.initEvent('change',true,true);el.dispatchEvent(ce);}catch(e){}");
-            sb.append("try{var ie=document.createEvent('HTMLEvents');ie.initEvent('input',true,true);el.dispatchEvent(ie);}catch(e){}");
-            sb.append("try{el.style.backgroundColor='#4CAF50';el.style.color='#fff';}catch(e){}");
-            sb.append("sel=true;}");
-
-            // 策略1: label 匹配答案
-            sb.append("try{var lbs=D.querySelectorAll('label');");
-            sb.append("for(var i=0;i<lbs.length;i++){var lb=lbs[i];");
-            sb.append("var t='';try{t=(lb.innerText||lb.textContent||'').toString();}catch(e){}");
-            sb.append("if(t.indexOf(AT)>=0){var inp=lb.querySelector('input[type=radio],input[type=checkbox]');if(inp){doSel(inp);break;}");
-            sb.append("var fid=lb.getAttribute('for');if(fid){var ip2=D.getElementById(fid);if(ip2){doSel(ip2);break;}}}");
-            sb.append("}}catch(e){}");
-
-            // 策略2: 直接遍历 radio/checkbox，检查父元素文本
-            sb.append("if(!sel){try{var ins=D.querySelectorAll('input[type=radio],input[type=checkbox]');");
-            sb.append("for(var j=0;j<ins.length;j++){var ip=ins[j];");
-            sb.append("var pu='';try{var up=ip.parentElement;if(up)pu=(up.innerText||up.textContent||'').toString();}catch(e){}");
-            sb.append("if(pu.indexOf(AT)>=0){doSel(ip);break;}");
-            sb.append("}}catch(e){}");
-
-            // 策略3: 向上遍历查找含答案文本的容器
-            sb.append("if(!sel){try{var els=D.querySelectorAll('div,span,li,p,td');");
-            sb.append("for(var k=0;k<els.length;k++){var el=els[k];");
-            sb.append("var et='';try{et=(el.innerText||el.textContent||'').toString();}catch(e){}");
-            sb.append("if(et.indexOf(AT)>=0){");
-            sb.append("var cu=el;for(var lv=0;lv<10;lv++){if(!cu)break;");
-            sb.append("if(cu.tagName==='INPUT'){doSel(cu);break;}");
-            sb.append("var qp=cu.querySelector&&cu.querySelector('input[type=radio],input[type=checkbox]');if(qp){doSel(qp);break;}");
-            sb.append("cu=cu.parentElement;}if(sel)break;}");
-            sb.append("}}catch(e){}");
-
-            // 策略4: 通过"正确答案"标记文本查找
-            sb.append("if(!sel&&AM){try{var al=D.querySelectorAll('*');");
-            sb.append("for(var m=0;m<al.length;m++){var e2=al[m];");
-            sb.append("var t2='';try{t2=(e2.innerText||e2.textContent||'').toString();}catch(e){}");
-            sb.append("if(t2.indexOf(AM)>=0){var cu2=e2;for(var lv2=0;lv2<15;lv2++){if(!cu2)break;");
-            sb.append("if(cu2.tagName==='INPUT'){doSel(cu2);break;}");
-            sb.append("var qp2=cu2.querySelector&&cu2.querySelector('input[type=radio],input[type=checkbox]');if(qp2){doSel(qp2);break;}");
-            sb.append("cu2=cu2.parentElement;}if(sel)break;}");
-            sb.append("}}catch(e){}");
-
-            // 策略5: MutationObserver 监听动态内容
-            sb.append("if(!sel&&window.MutationObserver){try{");
-            sb.append("var ob=new MutationObserver(function(){if(sel)return;");
-            sb.append("var ls=D.querySelectorAll('label');for(var oi=0;oi<ls.length;oi++){var l=ls[oi];");
-            sb.append("var lt='';try{lt=(l.innerText||l.textContent||'').toString();}catch(e){}");
-            sb.append("if(lt.indexOf(AT)>=0){var ip3=l.querySelector('input');if(ip3){doSel(ip3);ob.disconnect();return;}}}");
-            sb.append("});ob.observe(D.body||D.documentElement,{childList:true,subtree:true,characterData:true});");
-            sb.append("setTimeout(function(){try{ob.disconnect();}catch(e){}},20000);");
-            sb.append("}catch(e){}");
-
-            sb.append("console.log('[答案模块] JS结束 selected='+sel);");
-
-            // 结束所有 try/catch 和 IIFE
-            sb.append("}catch(e){console.log('[答案模块] JS顶层异常:'+e.message);}})();");
-
-            String js = sb.toString();
-
-            // 方式1: evaluateJavascript (优先)
-            boolean injected = false;
             try {
-                XposedHelpers.callMethod(webViewObj, "evaluateJavascript", js, null);
-                injected = true;
+                XposedBridge.log("[答案模块] " + sourceTag + " 注入JS答案=" + answerText.substring(0, Math.min(40, answerText.length())) + " JS长=" + js.length());
             } catch (Throwable ignored) {}
 
-            // 方式2: loadUrl("javascript:") 兜底
-            if (!injected) {
-                try {
-                    XposedHelpers.callMethod(webViewObj, "loadUrl", "javascript:" + js);
-                    injected = true;
-                } catch (Throwable ignored) {}
-            }
+            // ========== 方式 1: evaluateJavascript (带 ValueCallback) ==========
+            try {
+                Object callback = XposedHelpers.callStaticMethod(
+                        XposedHelpers.findClass("android.webkit.ValueCallback", webViewObj.getClass().getClassLoader()),
+                        "toString"  // 用匿名类替代，这里改用反射构造
+                );
+                XposedHelpers.callMethod(webViewObj, "evaluateJavascript", js, null);
+                try { XposedBridge.log("[答案模块] " + sourceTag + " 方式1 evaluateJavascript OK"); } catch (Throwable ignored) {}
+                return;
+            } catch (Throwable ignored) {}
 
-            if (injected) {
-                try {
-                    XposedBridge.log("[答案模块] " + sourceTag + " 已注入JS: " + answerText.substring(0, Math.min(50, answerText.length())));
-                } catch (Throwable ignored) {}
+            // ========== 方式 2: loadUrl("javascript:...") 带前缀 ==========
+            try {
+                XposedHelpers.callMethod(webViewObj, "loadUrl", "javascript:(function(){" + js + "})()");
+                try { XposedBridge.log("[答案模块] " + sourceTag + " 方式2 loadUrl OK"); } catch (Throwable ignored) {}
+                return;
+            } catch (Throwable ignored) {}
+
+            // ========== 方式 3: 直接执行纯 JS（不包装 IIFE） ==========
+            try {
+                XposedHelpers.callMethod(webViewObj, "evaluateJavascript", js, null);
+                try { XposedBridge.log("[答案模块] " + sourceTag + " 方式3 纯evaluateJavascript OK"); } catch (Throwable ignored) {}
+                return;
+            } catch (Throwable ignored) {}
+
+            // ========== 方式 4: 超简化版 JS - 只做最基本的 checked 设置 ==========
+            try {
+                String miniJs = "var t='".concat(safeA).concat("';var ls=document.querySelectorAll('label');for(var i=0;i<ls.length;i++){var tx=ls[i].innerText||'';if(tx.indexOf(t)>=0){var inp=ls[i].querySelector('input');if(inp){inp.checked=true;try{inp.dispatchEvent(new Event('change'));}catch(e){};try{inp.style.backgroundColor='#4CAF50';}catch(e){}break;}}}console.log('[答案模块] miniJS done');");
+                XposedHelpers.callMethod(webViewObj, "loadUrl", "javascript:" + miniJs);
+                try { XposedBridge.log("[答案模块] " + sourceTag + " 方式4 miniJS OK"); } catch (Throwable ignored) {}
+            } catch (Throwable t) {
+                try { XposedBridge.log("[答案模块] " + sourceTag + " 所有JS注入方式失败: " + t.getMessage()); } catch (Throwable ignored2) {}
             }
         } catch (Throwable t) {
             try { XposedBridge.log("[答案模块] " + sourceTag + " 注入异常: " + t.getMessage()); } catch (Throwable ignored2) {}
@@ -1077,61 +1049,235 @@ public class XposedInit implements IXposedHookLoadPackage {
         return sb.toString();
     }
 
-    // ============ 构建自动选中 JS（保留原方法名，简化实现） ============
+    // ============ 构建自动选中 JS（v2 增强版：10+ 策略 ============
+    private static String buildAutoClickJS2(String safeA, String safeM) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("try{");
+        sb.append("var AT='").append(safeA).append("';var AM='").append(safeM).append("';var S=false;var D=document;");
+
+        // ========== doClick: 对一个元素执行点击（多种JS事件） ==========
+        sb.append("function dc(el){");
+        sb.append("try{el.checked=true;}catch(e){}");
+        sb.append("try{if(el.click)el.click();}catch(e){}");
+        sb.append("try{var ev1=new MouseEvent('click',{bubbles:true,cancelable:true,view:window);el.dispatchEvent(ev1);}catch(e){}");
+        sb.append("try{var d=document.createEvent('MouseEvents');d.initMouseEvent('mousedown',true,true,window,0,0,0,0,0,false,false,false,false,0,null);el.dispatchEvent(d);}catch(e){}");
+        sb.append("try{var u=document.createEvent('MouseEvents');u.initMouseEvent('mouseup',true,true,window,0,0,0,0,0,false,false,false,false,0,null);el.dispatchEvent(u);}catch(e){}");
+        sb.append("try{var ce=document.createEvent('HTMLEvents');ce.initEvent('change',true,true);el.dispatchEvent(ce);}catch(e){}");
+        sb.append("try{var ie=document.createEvent('HTMLEvents');ie.initEvent('input',true,true);el.dispatchEvent(ie);}catch(e){}");
+        sb.append("try{if(el.parentElement){el.parentElement.click();}catch(e){}");
+        sb.append("try{el.focus();}catch(e){}");
+        sb.append("try{el.setAttribute('checked','checked');}catch(e){}");
+        sb.append("try{if(el.value){el.value='true';}catch(e){}");
+        sb.append("try{el.style.backgroundColor='#4CAF50';el.style.color='#fff';el.style.padding='4px 8px';el.style.borderRadius='4px';}catch(e){}");
+        sb.append("S=true;console.log('[答案模块] doClick成功: '+el.tagName);}");
+
+        // ========== 策略1: label 匹配答案文本
+        sb.append("try{var lbs=D.querySelectorAll('label,div,span');");
+        sb.append("for(var i=0;i<lbs.length;i++){var lb=lbs[i];");
+        sb.append("var tt=lb.innerText||lb.textContent||'';tt=tt.toString();");
+        sb.append("if(tt.indexOf(AT)>=0){");
+        sb.append("var inp=lb.querySelector?lb.querySelector('input[type=radio],input[type=checkbox],input,button'):null;if(inp){dc(inp);break;}");
+        sb.append("var fid=lb.getAttribute&&lb.getAttribute('for');if(fid){var ip2=D.getElementById(fid);if(ip2){dc(ip2);break;}}");
+        sb.append("dc(lb);if(S)break;}");
+        sb.append("}}catch(e){}");
+
+        // ========== 策略2: 遍历所有 input type=radio/checkbox 父元素文本匹配
+        sb.append("if(!S){try{var ins=D.querySelectorAll('input[type=radio],input[type=checkbox],input');");
+        sb.append("for(var j=0;j<ins.length;j++){var ip=ins[j];var pu=(ip.parentElement)?(ip.parentElement.innerText||ip.parentElement.textContent||''):'';");
+        sb.append("if(pu.indexOf(AT)>=0){dc(ip);break;}}catch(e){}");
+
+        // ========== 策略3: 遍历所有 div/span/li/p/td + 向上查找可点击元素
+        sb.append("if(!S){try{var els=D.querySelectorAll('div,span,li,p,td,button,a');");
+        sb.append("for(var k=0;k<els.length;k++){var el2=els[k];");
+        sb.append("var et='';try{et=(el2.innerText||el2.textContent||'').toString();}catch(e){}");
+        sb.append("if(et.indexOf(AT)>=0){");
+        sb.append("var cu=el2;for(var lv=0;lv<12;lv++){if(!cu)break;");
+        sb.append("if(cu.tagName==='INPUT'||cu.tagName==='BUTTON'||cu.tagName==='A'){dc(cu);break;}");
+        sb.append("var qp=cu.querySelector&&cu.querySelector('input,button');if(qp){dc(qp);break;}");
+        sb.append("if(cu.onclick||cu.style&&cu.style&&cu.style.cursor){try{dc(cu);break;}catch(e){}}");
+        sb.append("cu=cu.parentElement;}if(S)break;}");
+        sb.append("}}catch(e){}");
+
+        // ========== 策略4: 通过 正确答案 标记文本查找
+        sb.append("if(!S&&AM){try{var al=D.querySelectorAll('*');");
+        sb.append("for(var m=0;m<al.length;m++){var e3=al[m];");
+        sb.append("var t3='';try{t3=(e3.innerText||e3.textContent||'').toString();}catch(e){}");
+        sb.append("if(t3.indexOf(AM)>=0){var cu3=e3;for(var lv3=0;lv3<18;lv3++){if(!cu3)break;");
+        sb.append("if(cu3.tagName==='INPUT'||cu3.tagName==='BUTTON'||cu3.tagName==='A'){dc(cu3);break;}");
+        sb.append("var qp3=cu3.querySelector&&cu3.querySelector('input,button');if(qp3){dc(qp3);break;}");
+        sb.append("cu3=cu3.parentElement;}if(S)break;}");
+        sb.append("}}catch(e){}");
+
+        // ========== 策略5: 找 form 中的 button/input submit
+        sb.append("if(!S){try{var forms=D.querySelectorAll('form');");
+        sb.append("for(var fi=0;fi<forms.length;fi++){");
+        sb.append("var ftx=forms[fi].innerText||forms[fi].textContent||'';if(ftx.indexOf(AT)>=0){");
+        sb.append("var fbs=forms[fi].querySelectorAll('input,button');");
+        sb.append("for(var fb=0;fb<fbs.length;fb++){var fbb=fbs[fb];var btx='';try{btx=(fbb.innerText||fbb.value||'').toString();}catch(e){}if(btx.indexOf(AT)>=0||(fbb.parentElement&&fbb.parentElement.innerText&&fbb.parentElement.innerText.indexOf(AT)>=0){dc(fbb);break;}}if(S)break;}");
+        sb.append("}}catch(e){}");
+
+        // ========== 策略6: 遍历所有可点击元素
+        sb.append("if(!S){try{var ev2=D.querySelectorAll('button,a,[onclick],[role=button],[tabindex]');");
+        sb.append("for(var qi=0;qi<ev2.length;qi++){var ev22=ev2[qi];var et2='';try{et2=(ev22.innerText||ev22.textContent||'').toString();}catch(e){}");
+        sb.append("if(et2.indexOf(AT)>=0){dc(ev22);if(S)break;}");
+        sb.append("}}catch(e){}");
+
+        // ========== 策略7: 通过 input 的 value 属性
+        sb.append("if(!S){try{var allinp=D.getElementsByTagName('input');");
+        sb.append("for(var ai=0;ai<allinp.length;ai++){var ai2=allinp[ai];var vv='';try{vv=(ai2.value||'').toString();}catch(e){}");
+        sb.append("if(vv.indexOf(AT)>=0){dc(ai2);break;}");
+        sb.append("var p=ai2.parentElement;if(p){var pt='';try{pt=(p.innerText||p.textContent||'').toString();}catch(e){}if(pt.indexOf(AT)>=0){dc(ai2);break;}}}");
+        sb.append("}}catch(e){}");
+
+        // ========== 策略8: 原生 dispatch KeyboardEvent（模拟用户键盘点击）
+        sb.append("if(!S){try{var sp1=D.querySelectorAll('label,div');for(var si=0;si<sp1.length;si++){var spt=(sp1[si].innerText||'').toString();if(spt.indexOf(AT)>=0){var spkp=sp1[si].querySelector('input');if(spkp){try{var kb=document.createEvent('KeyboardEvent');kb.initKeyboardEvent('keydown',true,true,window,0,0,0,0,0,0,0);spkp.dispatchEvent(kb);}catch(e){}dc(spkp);break;}}});}catch(e){}");
+
+        // ========== 策略9: 通过 position:relative clickable elements click via getBoundingClientRect
+        sb.append("if(!S){try{var labels2=D.querySelectorAll('div,span,li');");
+        sb.append("for(var zi=0;zi<labels2.length;zi++){");
+        sb.append("var le=labels2[zi];var lt='';try{lt=(le.innerText||le.textContent||'').toString();}catch(e){}");
+        sb.append("if(lt.indexOf(AT)>=0){");
+        sb.append("try{var rect=le.getBoundingClientRect();var evt2=document.createEvent('MouseEvents');evt2.initMouseEvent('click',true,true,window,1,rect.left+rect.width/2,rect.top+rect.height/2,rect.left+rect.width/2,rect.top+rect.height/2,false,false,false,false,0,null);le.dispatchEvent(evt2);S=true;console.log('[答案模块] BoundingRect成功');}catch(e){}");
+        sb.append("if(S)break;}");
+        sb.append("}}catch(e){}");
+
+        // ========== 策略10: MutationObserver 监听动态内容
+        sb.append("if(!S&&window.MutationObserver){try{");
+        sb.append("var obs=new MutationObserver(function(){if(S)return;");
+        sb.append("var lss=D.querySelectorAll('label,div,input,button');");
+        sb.append("for(var oi=0;oi<lss.length;oi++){var lel=lss[oi];");
+        sb.append("var ltx='';try{ltx=(lel.innerText||lel.textContent||'').toString();}catch(e){}");
+        sb.append("if(ltx.indexOf(AT)>=0||(AM&&ltx.indexOf(AM)>=0)){var inp4=lel.querySelector&&lel.querySelector('input,button');if(inp4){dc(inp4);obs.disconnect();return;}else{dc(lel);obs.disconnect();return;}}}");
+        sb.append("});obs.observe(D.body||D.documentElement,{childList:true,subtree:true,characterData:true,attributes:true});");
+        sb.append("setTimeout(function(){try{obs.disconnect();}catch(e){}},20000);console.log('[答案模块] MutationObserver启动');}catch(e){}");
+
+        // ========== 策略11: 直接模拟触摸（PointerEvents）
+        sb.append("if(!S){try{var pobs='';var plbls=D.querySelectorAll('div,label,span,button');");
+        sb.append("for(var pti=0;pti<plbls.length;pti++){");
+        sb.append("var ple=plbls[pti];var pltx='';try{pltx=(ple.innerText||ple.textContent||'').toString();}catch(e){}");
+        sb.append("if(pltx.indexOf(AT)>=0){");
+        sb.append("try{var prect=ple.getBoundingClientRect();var pe=document.createEvent('MouseEvents');pe.initMouseEvent('pointerdown',true,true,window,1,prect.left+prect.width/2,prect.top+prect.height/2,prect.left+prect.width/2,prect.top+prect.height/2,false,false,false,false,0,null);ple.dispatchEvent(pe);}catch(e){}");
+        sb.append("try{var pu2=document.createEvent('MouseEvents');pu2.initMouseEvent('pointerup',true,true,window,1,prect.left+prect.width/2,prect.top+prect.height/2,prect.left+prect.width/2,prect.top+prect.height/2,false,false,false,false,0,null);ple.dispatchEvent(pu2);S=true;console.log('[答案模块] Pointer成功');}catch(e){}");
+        sb.append("if(S)break;}");
+        sb.append("}}catch(e){}");
+
+        // ========== 策略12: 遍历所有元素，含答案文本就点击其第一子元素
+        sb.append("if(!S){try{var all2=document.body.getElementsByTagName('*');");
+        sb.append("for(var xi=0;xi<Math.min(all2.length,3000);xi++){");
+        sb.append("var xe=all2[xi];var xtx='';try{xtx=(xe.innerText||xe.textContent||'').toString();}catch(e){}");
+        sb.append("if(xtx&&(xtx.indexOf(AT)>=0||(AM&&xtx.indexOf(AM)>=0))&&xtx.length<300){");
+        sb.append("var xcu=xe;for(var xlv=0;xlv<8;xlv++){if(!xcu)break;");
+        sb.append("if(xcu.querySelector&&xcu.querySelector('input,button')){var xi2=xcu.querySelector('input,button');if(xi2){dc(xi2);break;}}");
+        sb.append("xcu=xcu.parentElement;}if(S)break;}");
+        sb.append("}}catch(e){}");
+
+        sb.append("console.log('[答案模块] JS执行完成 selected='+S);");
+
+        sb.append("}catch(e){console.log('[答案模块] JS顶层异常:'+e.message);}");
+        return sb.toString();
+    }
+
+    // ============ 构建自动选中 JS（保留原方法名，调用 v2） ============
     private String buildAutoClickJS() {
         String answerText = sCorrectAnswerText;
         if (answerText == null || answerText.isEmpty()) return "";
-
         String safeA = escapeJsString(answerText);
         String safeM = escapeJsString(sMarkedAnswerText != null ? sMarkedAnswerText : "");
+        return buildAutoClickJS2(safeA, safeM);
+    }
 
-        StringBuilder js = new StringBuilder();
-        js.append("(function(){try{");
-        js.append("var AT='").append(safeA).append("';var AM='").append(safeM).append("';");
-        js.append("var sel=false;var D=document;");
-        js.append("function doSel(el){try{el.checked=true;}catch(e){}");
-        js.append("try{var ce=document.createEvent('HTMLEvents');ce.initEvent('change',true,true);el.dispatchEvent(ce);}catch(e){}");
-        js.append("try{var ie=document.createEvent('HTMLEvents');ie.initEvent('input',true,true);el.dispatchEvent(ie);}catch(e){}");
-        js.append("try{el.style.backgroundColor='#4CAF50';el.style.color='#fff';}catch(e){}");
-        js.append("sel=true;}");
-        js.append("try{var lbs=D.querySelectorAll('label');");
-        js.append("for(var i=0;i<lbs.length;i++){var lb=lbs[i];");
-        js.append("var t='';try{t=(lb.innerText||lb.textContent||'').toString();}catch(e){}");
-        js.append("if(t.indexOf(AT)>=0){var inp=lb.querySelector('input[type=radio],input[type=checkbox]');if(inp){doSel(inp);break;}");
-        js.append("var fid=lb.getAttribute('for');if(fid){var ip2=D.getElementById(fid);if(ip2){doSel(ip2);break;}}}");
-        js.append("}}catch(e){}");
-        js.append("if(!sel){try{var ins=D.querySelectorAll('input[type=radio],input[type=checkbox]');");
-        js.append("for(var j=0;j<ins.length;j++){var ip=ins[j];");
-        js.append("var pu='';try{var up=ip.parentElement;if(up)pu=(up.innerText||up.textContent||'').toString();}catch(e){}");
-        js.append("if(pu.indexOf(AT)>=0){doSel(ip);break;}");
-        js.append("}}catch(e){}");
-        js.append("if(!sel){try{var els=D.querySelectorAll('div,span,li,p,td');");
-        js.append("for(var k=0;k<els.length;k++){var el=els[k];");
-        js.append("var et='';try{et=(el.innerText||el.textContent||'').toString();}catch(e){}");
-        js.append("if(et.indexOf(AT)>=0){");
-        js.append("var cu=el;for(var lv=0;lv<10;lv++){if(!cu)break;");
-        js.append("if(cu.tagName==='INPUT'){doSel(cu);break;}");
-        js.append("var qp=cu.querySelector&&cu.querySelector('input[type=radio],input[type=checkbox]');if(qp){doSel(qp);break;}");
-        js.append("cu=cu.parentElement;}if(sel)break;}");
-        js.append("}}catch(e){}");
-        js.append("if(!sel&&AM){try{var al=D.querySelectorAll('*');");
-        js.append("for(var m=0;m<al.length;m++){var e2=al[m];");
-        js.append("var t2='';try{t2=(e2.innerText||e2.textContent||'').toString();}catch(e){}");
-        js.append("if(t2.indexOf(AM)>=0){var cu2=e2;for(var lv2=0;lv2<15;lv2++){if(!cu2)break;");
-        js.append("if(cu2.tagName==='INPUT'){doSel(cu2);break;}");
-        js.append("var qp2=cu2.querySelector&&cu2.querySelector('input[type=radio],input[type=checkbox]');if(qp2){doSel(qp2);break;}");
-        js.append("cu2=cu2.parentElement;}if(sel)break;}");
-        js.append("}}catch(e){}");
-        js.append("if(!sel&&window.MutationObserver){try{");
-        js.append("var ob=new MutationObserver(function(){if(sel)return;");
-        js.append("var ls=D.querySelectorAll('label');for(var oi=0;oi<ls.length;oi++){var l=ls[oi];");
-        js.append("var lt='';try{lt=(l.innerText||l.textContent||'').toString();}catch(e){}");
-        js.append("if(lt.indexOf(AT)>=0){var ip3=l.querySelector('input');if(ip3){doSel(ip3);ob.disconnect();return;}}}");
-        js.append("});ob.observe(D.body||D.documentElement,{childList:true,subtree:true,characterData:true});");
-        js.append("setTimeout(function(){try{ob.disconnect();}catch(e){}},20000);}catch(e){}");
-        js.append("console.log('[答案模块] JS结束 selected='+sel);");
-        js.append("}catch(e){console.log('[答案模块] JS顶层异常:'+e.message);}})();");
-        return js.toString();
+    // ============ WebView 原生触摸点击：通过 JS 获取坐标，在 Android 层发送触摸事件 ============
+    private static void autoTouchWebView(final Object webViewObj, final String answerText, final String source) {
+        try {
+            if (webViewObj == null || answerText == null || answerText.isEmpty()) return;
+
+            // 先尝试：在 WebView 中执行 JS 获取正确答案元素坐标，然后模拟触摸
+            String safeA = escapeJsString(answerText);
+            String js = "function getRectOfAnswer(){try{"
+                    + "var AT='" + safeA + "';"
+                    + "var lbs=document.querySelectorAll('label,div,span,button');for(var i=0;i<lbs.length;i++){"
+                    + "var tt=lbs[i].innerText||'';if(tt.indexOf(AT)>=0){"
+                    + "var r=lbs[i].getBoundingClientRect();"
+                    + "if(r.width>0&&r.height>0)return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height/2,w:r.width,h:r.height});}}"
+                    + "}catch(e){return '';}return '';}getRectOfAnswer();";
+
+            try {
+                // 使用 loadUrl 触发 JS 执行，同时记录答案文本
+                XposedHelpers.callMethod(webViewObj, "loadUrl", "javascript:" + js);
+                try { XposedBridge.log("[答案模块] " + source + " 已启动触摸坐标获取"); } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {}
+
+            // 延迟 1.5s 后尝试多种 Java 层点击（用 JS 回调）
+            final Object webViewFinal = webViewObj;
+            new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (!(webViewFinal instanceof android.webkit.WebView)) {
+                            // 如果不是系统 WebView 也尝试反射调用
+                            try {
+                                int[] loc = new int[2];
+                                XposedHelpers.callMethod(webViewFinal, "getLocationOnScreen", (Object) loc);
+                                int centerX = loc[0] + 100;
+                                int centerY = loc[1] + 100;
+                                dispatchSimulatedTouch(webViewFinal, centerX, centerY);
+                            } catch (Throwable ignored) {}
+                        } else {
+                            android.webkit.WebView wv = (android.webkit.WebView) webViewFinal;
+                            // 尝试遍历 WebView 的内容：取中部坐标点击
+                            int[] loc = new int[2];
+                            wv.getLocationOnScreen(loc);
+                            int w = wv.getWidth();
+                            int h = wv.getHeight();
+                            if (w > 0 && h > 0) {
+                                // 点击多个位置尝试
+                                int[][] points = {
+                                        {w / 2, h / 3},
+                                        {w / 2, h / 2},
+                                        {w / 2, h * 2 / 3},
+                                        {w / 4, h / 2},
+                                        {w * 3 / 4, h / 2},
+                                };
+                                for (int pi = 0; pi < points.length; pi++) {
+                                    final int px = loc[0] + points[pi][0];
+                                    final int py = loc[1] + points[pi][1];
+                                    new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            try {
+                                                dispatchSimulatedTouch(webViewFinal, px, py);
+                                            } catch (Throwable ignored) {}
+                                        }
+                                    }, pi * 300);
+                                }
+                            }
+                        }
+                    } catch (Throwable ignored) {}
+                }
+            }, 1500);
+        } catch (Throwable t) {
+            try { XposedBridge.log("[答案模块] autoTouchWebView 异常: " + t.getMessage()); } catch (Throwable ignored) {}
+        }
+    }
+
+    // ============ 对指定 View/WebView 发送一次触摸点击（Java 层）============
+    private static void dispatchSimulatedTouch(Object viewObj, int x, int y) {
+        try {
+            if (viewObj == null) return;
+            long downTime = System.currentTimeMillis();
+            Class<?> motionEventCls = Class.forName("android.view.MotionEvent");
+            // ACTION_DOWN
+            Object down = XposedHelpers.callStaticMethod(motionEventCls, "obtain",
+                    downTime, downTime, 0, (float) x, (float) y, 0);
+            XposedHelpers.callMethod(viewObj, "dispatchTouchEvent", down);
+            // ACTION_UP
+            Object up = XposedHelpers.callStaticMethod(motionEventCls, "obtain",
+                    downTime, System.currentTimeMillis() + 50, 1, (float) x, (float) y, 0);
+            XposedHelpers.callMethod(viewObj, "dispatchTouchEvent", up);
+            try { XposedBridge.log("[答案模块] dispatchSimulatedTouch: x=" + x + " y=" + y); } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            try { XposedBridge.log("[答案模块] dispatchSimulatedTouch 异常: " + t.getMessage()); } catch (Throwable ignored2) {}
+        }
     }
 
     // ============ 增强版点击：多种方式尝试 ============
