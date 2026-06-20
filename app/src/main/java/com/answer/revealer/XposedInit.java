@@ -1092,31 +1092,34 @@ public class XposedInit implements IXposedHookLoadPackage {
     // ============ 构建自动选中 JS（v8 — try块内返回明确的 SUCCESS/FAIL 字符串）============
     private static String buildAutoClickJS2(String safeA, String safeM, String safeTag) {
         StringBuilder sb = new StringBuilder();
-        // 整体 try-catch，确保任何情况都有返回值
+        // 整体 IIFE + try-catch，确保任何情况都有返回值
         sb.append("(function(){try{");
-        // TAG: Java传进来的注入点标识，如 [onPageFinished-1500ms] 或 [shouldInterceptRequest-2500ms]
+        // 变量按顺序定义
         sb.append("var TAG='").append(safeTag).append("';");
         sb.append("var AT='").append(safeA).append("';");
-        // IS_MULTI: 如果答案中有"、,;"分隔，或页面包含"多选/不定项"，则视为多选题→点击所有正确答案
+        sb.append("var D=document;var SEL=0;var FOUND='';");
+        // IS_MULTI: AT 含"、,;"分隔 或 页面含"多选/不定项" → 多选题
         sb.append("var IS_MULTI=(AT.indexOf('、')>=0||AT.indexOf(',')>=0||AT.indexOf(';')>=0);");
         sb.append("if(!IS_MULTI){try{var pgTxt=D.body.innerText;if(pgTxt){IS_MULTI=(pgTxt.indexOf('多选')>=0||pgTxt.indexOf('不定项')>=0);}}catch(e){}}");
-        sb.append("var D=document;var SEL=0;var FOUND='';");
 
         // l(msg)：三路日志（console.log + document.title + 内存LOG数组）
         sb.append("function l(m){try{console.log('[ANSWER]'+TAG+' '+m);}catch(e){}try{document.title=TAG+':'+String(m).substring(0,40);}catch(e){}}");
 
         // dc(el)：终极点击（多选题时可多次点击，单选时只点一次）
+        // 核心：逐级点击子元素+自身+祖先，确保 checkbox/radio 被触发
         sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el)return;SEL++;");
         sb.append("l('★CLICK! tag='+el.tagName+' cls='+(el.className||'')+' txt='+(el.innerText||el.value||'').substring(0,30));");
-        // 先尝试直接选中 input（checkbox/radio）
+        // 直接设置 checked（checkbox/radio）
         sb.append("try{if(el.tagName==='INPUT'){el.checked=true;el.setAttribute('checked','checked');try{el.focus();}catch(e){}}}catch(e){}");
-        // 再尝试 click 元素本身
+        // 点击元素本身
         sb.append("try{if(el.click)el.click();}catch(e){}");
-        // 向上查找：找父元素中带 onclick 或 INPUT/BUTTON/LABEL 的（label for 关联 input）
-        sb.append("try{var p=el;for(var z=0;z<15;z++){if(!p)break;if(p!==el&&(p.onclick||(p.getAttribute&&p.getAttribute('onclick'))||p.tagName==='INPUT'||p.tagName==='BUTTON'||p.tagName==='LABEL')){try{p.click();}catch(e){}try{if(p.tagName==='INPUT'){p.checked=true;}}catch(e){}break;}p=p.parentElement;}}catch(e){}");
-        // 全面事件派发（mouse 事件链 + change + input）
-        sb.append("try{var evs=['click','mousedown','mouseup','change','input'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
-        // 标绿作为执行成功的可视化标记
+        // 找子元素中的可点击元素（很多结构是 label>input+文字）
+        sb.append("try{var childs=el.querySelectorAll?el.querySelectorAll('input,button,label,[onclick],[role=button],[role=radio],[role=checkbox]'):null;if(childs&&childs.length>0){for(var ci=0;ci<childs.length;ci++){try{if(childs[ci].tagName==='INPUT'){childs[ci].checked=true;childs[ci].setAttribute('checked','checked');}childs[ci].click();}catch(e){}}}}catch(e){}");
+        // 向上查找15层：找带 onclick 或 INPUT/BUTTON/LABEL 的祖先元素
+        sb.append("try{var p=el;for(var z=0;z<15;z++){if(!p)break;if(p!==el){var ptn=(p.tagName||'').toUpperCase();if(ptn==='INPUT'||ptn==='BUTTON'||ptn==='LABEL'||p.onclick||(p.getAttribute&&p.getAttribute('onclick'))||(p.getAttribute&&p.getAttribute('role'))){try{if(ptn==='INPUT'){p.checked=true;p.setAttribute('checked','checked');}p.click();}catch(e){}break;}}p=p.parentElement;}}catch(e){}");
+        // 事件全面派发
+        sb.append("try{var evs=['click','mousedown','mouseup','change','input','touchstart','touchend'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0||evs[vi].indexOf('touch')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
+        // 标绿作为可视化标记
         sb.append("try{el.style.backgroundColor='#4CAF50';el.style.color='#fff';}catch(e){}");
         sb.append("}");
 
@@ -1129,14 +1132,19 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("cur=cur.parentElement;}");
         sb.append("l('FC:fallback click');dc(el);}");
 
-        // 策略1：TreeWalker 找"正确答案"标记 → 对每个匹配项调用 fc()（多选题遍历全部）
+        // 策略1：TreeWalker 找"正确答案"标记 → 逐级向上对每一层都调用 dc()（确保命中 checkbox/radio）
         sb.append("l('v8 start AT='+AT+' MULTI='+IS_MULTI);");
         sb.append("if(!D.body){l('body null');}else{");
         sb.append("var matches=[];var tw=D.createTreeWalker(D.body,NodeFilter.SHOW_TEXT,null,false);");
         sb.append("var node;while(node=tw.nextNode()){if(node.nodeValue&&node.nodeValue.indexOf('正确答案')>=0){var p=node.parentElement;if(p){matches.push(p);}}}");
         sb.append("l('策略1:匹配'+matches.length+'个');");
-        // 关键：对每个匹配项调用 fc() —— fc 内部有完整的子元素+祖先元素查找链
-        sb.append("for(var mi=0;mi<matches.length;mi++){try{fc(matches[mi]);if(!IS_MULTI&&SEL>0)break;}catch(e){}l('策略1:第'+mi+'个处理完 SEL='+SEL);}");
+        // 对每个匹配项：从元素向上15层，对每一层都尝试 dc()（确保能命中 checkbox/radio/label）
+        sb.append("for(var mi=0;mi<matches.length;mi++){try{");
+        sb.append("var em=matches[mi];var selBefore=SEL;");
+        sb.append("var cu=em;for(var zi=0;zi<15;zi++){if(!cu)break;try{dc(cu);}catch(e){}");
+        sb.append("if(!IS_MULTI&&SEL>selBefore)break;cu=cu.parentElement;}");
+        sb.append("l('策略1:第'+mi+'个处理完成 SEL='+SEL);");
+        sb.append("}catch(e){l('策略1:第'+mi+'个异常:'+e.message);}}");
 
         // 策略2：querySelectorAll 兜底
         sb.append("if(SEL===0){var all=D.body.querySelectorAll('*');l('策略2:scan '+all.length);");
