@@ -430,7 +430,7 @@ public class MainActivity extends Activity {
         root.addView(card, cardParams());
     }
 
-    // ============ 统计数字卡 ============
+    // ============ 统计数字卡（列表形式） ============
     private void addStatsCard(LinearLayout root, StatsData data) {
         LinearLayout card = createCard();
         card.addView(createColorStrip(COLOR_ACCENT));
@@ -450,59 +450,105 @@ public class MainActivity extends Activity {
         int rc = data != null ? data.requestCount : -1;
         long lt = data != null ? data.lastHookTime : -1;
 
-        // 3 列 - 答案命中 / 请求总数 / 最近活跃
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rp.topMargin = dp(12);
-        content.addView(row, rp);
+        // 列表项数据
+        List<StatItem> items = new ArrayList<>();
+        items.add(new StatItem("答案命中", hh < 0 ? null : String.valueOf(hh), COLOR_ACCENT));
+        items.add(new StatItem("请求总数", rc < 0 ? null : String.valueOf(rc), COLOR_WARNING));
+        items.add(new StatItem("最近活跃", formatTime(lt), COLOR_TEXT_SECONDARY));
 
-        addStatCell(row, "答案命中", hh < 0 ? "--" : String.valueOf(hh), COLOR_ACCENT);
-        addStatCell(row, "请求总数", rc < 0 ? "--" : String.valueOf(rc), COLOR_WARNING);
-        addStatCell(row, "最近活跃", formatTime(lt), COLOR_TEXT_SECONDARY);
+        // 渲染列表
+        boolean hasAnyData = false;
+        for (int i = 0; i < items.size(); i++) {
+            StatItem item = items.get(i);
+            View row = makeStatListItem(item.label, item.value, item.color);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = (i == 0) ? dp(10) : dp(6);
+            content.addView(row, lp);
+            if (item.value != null) hasAnyData = true;
+        }
+
+        // 空状态提示
+        if (!hasAnyData) {
+            TextView empty = new TextView(this);
+            empty.setText("暂无统计数据\n\n请先打开目标应用，进入答题页面后返回刷新");
+            empty.setTextSize(12);
+            empty.setTextColor(COLOR_TEXT_SECONDARY);
+            empty.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            ep.topMargin = dp(10);
+            content.addView(empty, ep);
+        }
 
         card.addView(content);
         root.addView(card, cardParams());
     }
 
-    private void addStatCell(LinearLayout parent, String label, String value, int color) {
-        LinearLayout cell = new LinearLayout(this);
-        cell.setOrientation(LinearLayout.VERTICAL);
-        cell.setGravity(Gravity.CENTER);
+    private static class StatItem {
+        String label;
+        String value;
+        int color;
+        StatItem(String label, String value, int color) {
+            this.label = label;
+            this.value = value;
+            this.color = color;
+        }
+    }
+
+    // ============ 统计列表行 ============
+    private View makeStatListItem(String label, String value, int color) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
 
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(COLOR_CARD);
         bg.setCornerRadius(dp(8));
         bg.setStroke(dp(1), 0xFFE0E4EC);
-        cell.setBackground(bg);
+        row.setBackground(bg);
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
 
-        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        int margin = dp(4);
-        cp.setMargins(margin, 0, margin, 0);
-        cell.setLayoutParams(cp);
-        cell.setPadding(dp(12), dp(14), dp(12), dp(14));
+        // 左侧色块
+        View dot = new View(this);
+        GradientDrawable dotBg = new GradientDrawable();
+        dotBg.setShape(GradientDrawable.OVAL);
+        dotBg.setColor(color);
+        dot.setBackground(dotBg);
+        LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dp(8), dp(8));
+        dotLp.setMargins(0, 0, dp(10), 0);
+        dot.setLayoutParams(dotLp);
+        row.addView(dot);
 
-        TextView val = new TextView(this);
-        val.setText(value);
-        val.setTextSize(20);
-        val.setTextColor(color);
-        val.setTypeface(null, android.graphics.Typeface.BOLD);
-        val.setGravity(Gravity.CENTER);
-        cell.addView(val, lpMatch());
+        // 标签
+        TextView labelTv = new TextView(this);
+        labelTv.setText(label);
+        labelTv.setTextSize(13);
+        labelTv.setTextColor(COLOR_TEXT_PRIMARY);
+        LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        labelLp.gravity = Gravity.CENTER_VERTICAL;
+        labelTv.setLayoutParams(labelLp);
+        row.addView(labelTv);
 
-        TextView lab = new TextView(this);
-        lab.setText(label);
-        lab.setTextSize(11);
-        lab.setTextColor(COLOR_TEXT_SECONDARY);
-        lab.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(4);
-        cell.addView(lab, lp);
+        // 值
+        TextView valueTv = new TextView(this);
+        if (value != null) {
+            valueTv.setText(value);
+            valueTv.setTextColor(color);
+            valueTv.setTypeface(null, android.graphics.Typeface.BOLD);
+        } else {
+            valueTv.setText("--");
+            valueTv.setTextColor(0xFFB0BEC5);
+        }
+        valueTv.setTextSize(14);
+        valueTv.setGravity(Gravity.END);
+        row.addView(valueTv);
 
-        parent.addView(cell);
+        return row;
     }
+
+
 
     // ============ 目标应用信息卡 ============
     private void addTargetInfoCard(LinearLayout root) {
