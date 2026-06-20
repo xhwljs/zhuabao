@@ -576,7 +576,12 @@ public class XposedInit implements IXposedHookLoadPackage {
         }
     }
 
-    // ============ 修改 JSON：在正确选项前加红色标记 ============
+    // ============ 修改 JSON：标记正确答案 + 自动选中 ============
+    // 1. 在正确选项的 optionText 前加上 "【 xxx 正确答案 】" 标识
+    // 2. 同时设置多种常见的 "选中/已选" 字段，兼容不同的前端渲染逻辑
+    //    - isSelected / selected / isChecked / checked: 选项级选中标记
+    //    - 同时在 data 层设置 answerId / correctAnswerId / selectedOptionId
+    //      便于前端直接使用正确答案的 id 做显示
     private String modifyAnswerBodyWithStyle(String bodyStr) {
         try {
             JSONObject root = new JSONObject(bodyStr);
@@ -584,16 +589,71 @@ public class XposedInit implements IXposedHookLoadPackage {
             if (data == null) return bodyStr;
             JSONArray options = data.optJSONArray("answerOptionList");
             if (options == null || options.length() == 0) return bodyStr;
+
             boolean changed = false;
+            Integer firstRightIndex = null;     // 第一个正确选项的索引
+            Object firstRightId = null;         // 第一个正确选项的 id
+            String firstRightOptionNo = null;   // 第一个正确选项的 optionNo
+
+            // 第一遍：给每个正确选项设置选中标记和文本标识
             for (int i = 0; i < options.length(); i++) {
                 JSONObject opt = options.optJSONObject(i);
                 if (opt == null) continue;
                 if (opt.optInt("isRight") == 1) {
+                    // 文本标识
                     String text = opt.optString("optionText", "");
                     opt.put("optionText", "【 " + text + " 正确答案 】");
+
+                    // 自动选中：设置多种常见选中字段
+                    // 数值型
+                    opt.put("isSelected", 1);
+                    opt.put("selected", 1);
+                    opt.put("isChecked", 1);
+                    opt.put("checked", 1);
+                    opt.put("checkStatus", 1);
+                    opt.put("optionStatus", 1);
+                    // 布尔型（部分框架使用 boolean 而非 int）
+                    opt.put("isSelected_bool", true);
+                    opt.put("isChecked_bool", true);
+                    opt.put("selected_bool", true);
+
+                    // 记录第一个正确选项用于 data 层回写
+                    if (firstRightIndex == null) {
+                        firstRightIndex = i;
+                        // 尝试获取 id 字段（兼容多种字段名）
+                        Object id = opt.opt("id");
+                        if (id == null) id = opt.opt("optionId");
+                        if (id == null) id = opt.opt("answerId");
+                        if (id == null) id = opt.opt("option_id");
+                        firstRightId = id;
+                        firstRightOptionNo = opt.optString("optionNo", null);
+                    }
                     changed = true;
                 }
             }
+
+            // 第二遍：data 层设置正确答案 id 回写字段
+            if (changed) {
+                if (firstRightId != null) {
+                    data.put("answerId", firstRightId);
+                    data.put("correctAnswerId", firstRightId);
+                    data.put("selectedOptionId", firstRightId);
+                    data.put("selectedAnswerId", firstRightId);
+                }
+                if (firstRightIndex != null) {
+                    data.put("correctOptionIndex", firstRightIndex);
+                    data.put("selectedIndex", firstRightIndex);
+                    data.put("autoSelectIndex", firstRightIndex);
+                }
+                if (firstRightOptionNo != null && firstRightOptionNo.length() > 0) {
+                    data.put("correctOptionNo", firstRightOptionNo);
+                    data.put("selectedOptionNo", firstRightOptionNo);
+                }
+                // 整体状态：标识题目已被自动解析并选中
+                data.put("answerAutoSelected", 1);
+                data.put("parsedByModule", 1);
+            }
+
             return changed ? root.toString() : bodyStr;
         } catch (Throwable t) {
             return bodyStr;

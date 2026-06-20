@@ -318,9 +318,15 @@ public class MainActivity extends Activity {
         boolean active = data != null && data.moduleActive;
         int color = active ? COLOR_ACCENT : COLOR_DANGER;
         String title = active ? "✓ 模块已激活" : "✗ 模块尚未激活";
-        String hint = active
-                ? "Hook 已在目标应用中生效，可拦截并标记答案"
-                : "请在 LSPosed 管理器中启用本模块，并勾选作用域：tz.ycsy.az 和 com.answer.revealer。启用后请重启目标应用。";
+        String hint;
+        if (active) {
+            hint = "Hook 已在目标应用中生效，可拦截并标记答案。";
+        } else {
+            hint = "尚未检测到模块 Hook。请按以下步骤操作：\n" +
+                    "  1. 在 LSPosed 管理器中启用本模块\n" +
+                    "  2. 勾选作用域：tz.ycsy.az 和 com.answer.revealer\n" +
+                    "  3. 重启目标应用或点击下方「启动目标应用」";
+        }
 
         LinearLayout card = createCard();
         card.addView(createColorStrip(color));
@@ -329,17 +335,31 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(16), dp(12), dp(16), dp(16));
 
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        TextView iconTv = new TextView(this);
+        iconTv.setText(active ? "●" : "○");
+        iconTv.setTextSize(16);
+        iconTv.setTextColor(color);
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        ilp.rightMargin = dp(8);
+        headerRow.addView(iconTv, ilp);
+
         TextView titleTv = new TextView(this);
         titleTv.setText(title);
         titleTv.setTextSize(15);
         titleTv.setTextColor(color);
         titleTv.setTypeface(null, android.graphics.Typeface.BOLD);
-        content.addView(titleTv);
+        headerRow.addView(titleTv);
+        content.addView(headerRow);
 
         TextView hintTv = new TextView(this);
         hintTv.setText(hint);
         hintTv.setTextSize(12);
         hintTv.setTextColor(COLOR_TEXT_SECONDARY);
+        hintTv.setLineSpacing(dp(2), 1f);
         LinearLayout.LayoutParams htp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         htp.topMargin = dp(8);
@@ -430,7 +450,7 @@ public class MainActivity extends Activity {
         root.addView(card, cardParams());
     }
 
-    // ============ 统计数字卡 ============
+    // ============ 统计数字卡（列表形式）============
     private void addStatsCard(LinearLayout root, StatsData data) {
         LinearLayout card = createCard();
         card.addView(createColorStrip(COLOR_ACCENT));
@@ -439,31 +459,176 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(16), dp(12), dp(16), dp(16));
 
+        // 标题行
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        TextView titleIcon = new TextView(this);
+        titleIcon.setText("▤");
+        titleIcon.setTextSize(14);
+        titleIcon.setTextColor(COLOR_ACCENT);
+        LinearLayout.LayoutParams tilp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tilp.rightMargin = dp(6);
+        headerRow.addView(titleIcon, tilp);
+
         TextView title = new TextView(this);
         title.setText("统计数据");
         title.setTextSize(14);
         title.setTextColor(COLOR_PRIMARY_DARK);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
-        content.addView(title);
+        headerRow.addView(title);
+        content.addView(headerRow);
 
         int hh = data != null ? data.targetHitCount : -1;
         int rc = data != null ? data.requestCount : -1;
         long lt = data != null ? data.lastHookTime : -1;
+        String clientsStr = data != null ? data.detectedClients : "";
+        int clientCount = 0;
+        if (clientsStr != null && !clientsStr.trim().isEmpty()) {
+            String[] arr = clientsStr.trim().split("\n");
+            for (String s : arr) if (s != null && s.trim().length() > 0) clientCount++;
+        }
+        boolean targetInstalled = isPackageInstalled(TARGET_PACKAGE);
 
-        // 3 列 - 答案命中 / 请求总数 / 最近活跃
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
+        // 列表项数据
+        String[][] items = new String[][]{
+                {"✓", "答案命中次数", hh > 0 ? String.valueOf(hh) + " 次" : null, COLOR_ACCENT},
+                {"↻", "拦截请求总数", rc > 0 ? String.valueOf(rc) + " 次" : null, COLOR_WARNING},
+                {"◉", "最近活跃时间", lt > 0 ? formatFullTime(lt) : null, COLOR_INFO},
+                {"⌘", "检测到的 HTTP 客户端", clientCount > 0 ? String.valueOf(clientCount) + " 个" : null, COLOR_PRIMARY},
+                {"◎", "目标应用状态", targetInstalled ? "已安装 (" + TARGET_PACKAGE + ")" : null, COLOR_PRIMARY_DARK},
+                {"⚑", "模块激活状态", data != null && data.moduleActive ? "已激活" : null, COLOR_ACCENT},
+        };
+
+        boolean hasAnyData = false;
+        for (String[] item : items) if (item[2] != null) { hasAnyData = true; break; }
+
+        LinearLayout.LayoutParams listLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rp.topMargin = dp(12);
-        content.addView(row, rp);
+        listLp.topMargin = dp(10);
 
-        addStatCell(row, "答案命中", hh < 0 ? "--" : String.valueOf(hh), COLOR_ACCENT);
-        addStatCell(row, "请求总数", rc < 0 ? "--" : String.valueOf(rc), COLOR_WARNING);
-        addStatCell(row, "最近活跃", formatTime(lt), COLOR_TEXT_SECONDARY);
+        if (hasAnyData) {
+            // 有数据：渲染列表
+            boolean isFirst = true;
+            for (String[] item : items) {
+                if (item[2] == null) continue;
+                View row = makeStatListItem(item[0], item[1], item[2],
+                        Integer.parseInt(item[3]), !isFirst);
+                content.addView(row, listLp);
+                isFirst = false;
+            }
+        } else {
+            // 无数据：空状态引导
+            LinearLayout emptyBox = new LinearLayout(this);
+            emptyBox.setOrientation(LinearLayout.VERTICAL);
+            emptyBox.setGravity(android.view.Gravity.CENTER);
+            emptyBox.setBackgroundColor(0xFFFAFBFC);
+            android.graphics.drawable.GradientDrawable emptyBg = new android.graphics.drawable.GradientDrawable();
+            emptyBg.setColor(0xFFFAFBFC);
+            emptyBg.setCornerRadius(dp(8));
+            emptyBg.setStroke(dp(1), 0xFFE0E4EC);
+            emptyBox.setBackground(emptyBg);
+            emptyBox.setPadding(dp(16), dp(20), dp(16), dp(20));
+
+            TextView emptyIcon = new TextView(this);
+            emptyIcon.setText("◇");
+            emptyIcon.setTextSize(32);
+            emptyIcon.setTextColor(0xFFB0BEC5);
+            emptyIcon.setGravity(android.view.Gravity.CENTER);
+            emptyBox.addView(emptyIcon);
+
+            TextView emptyTitle = new TextView(this);
+            emptyTitle.setText("暂无统计数据");
+            emptyTitle.setTextSize(14);
+            emptyTitle.setTextColor(COLOR_TEXT_PRIMARY);
+            emptyTitle.setGravity(android.view.Gravity.CENTER);
+            emptyTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+            LinearLayout.LayoutParams etlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            etlp.topMargin = dp(8);
+            emptyBox.addView(emptyTitle, etlp);
+
+            TextView emptyHint = new TextView(this);
+            emptyHint.setText("模块尚未拦截到任何题目请求。\n请按以下步骤操作：\n\n" +
+                    "  1. 确认已在 LSPosed 中启用模块并勾选作用域\n" +
+                    "  2. 点击下方「启动目标应用」进入答题页\n" +
+                    "  3. 答题时模块会自动拦截并记录\n" +
+                    "  4. 回到本页面点击「刷新数据」查看结果");
+            emptyHint.setTextSize(11);
+            emptyHint.setTextColor(COLOR_TEXT_SECONDARY);
+            emptyHint.setGravity(android.view.Gravity.CENTER);
+            emptyHint.setLineSpacing(dp(2), 1f);
+            LinearLayout.LayoutParams ehlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            ehlp.topMargin = dp(10);
+            emptyBox.addView(emptyHint, ehlp);
+
+            content.addView(emptyBox, listLp);
+        }
 
         card.addView(content);
         root.addView(card, cardParams());
+    }
+
+    // 统计列表项（图标 + 标签 + 值）
+    private View makeStatListItem(String icon, String label, String value, int color, boolean addDivider) {
+        LinearLayout wrapper = new LinearLayout(this);
+        wrapper.setOrientation(LinearLayout.VERTICAL);
+
+        if (addDivider) {
+            View divider = new View(this);
+            android.graphics.drawable.GradientDrawable dd = new android.graphics.drawable.GradientDrawable();
+            dd.setColor(0xFFE8ECF1);
+            divider.setBackground(dd);
+            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+            dlp.bottomMargin = dp(8);
+            wrapper.addView(divider, dlp);
+        }
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(4), dp(2), dp(4), dp(2));
+
+        // 图标圆章
+        TextView iconView = new TextView(this);
+        iconView.setText(icon);
+        iconView.setTextSize(13);
+        iconView.setTextColor(0xFFFFFFFF);
+        iconView.setGravity(android.view.Gravity.CENTER);
+        android.graphics.drawable.GradientDrawable iconBg = new android.graphics.drawable.GradientDrawable();
+        iconBg.setColor(color);
+        iconBg.setCornerRadius(dp(14));
+        iconView.setBackground(iconBg);
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(28), dp(28));
+        iconLp.rightMargin = dp(12);
+        row.addView(iconView, iconLp);
+
+        // 标签 + 值
+        LinearLayout textArea = new LinearLayout(this);
+        textArea.setOrientation(LinearLayout.VERTICAL);
+        textArea.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView labelView = new TextView(this);
+        labelView.setText(label);
+        labelView.setTextSize(12);
+        labelView.setTextColor(COLOR_TEXT_SECONDARY);
+        textArea.addView(labelView);
+
+        TextView valueView = new TextView(this);
+        valueView.setText(value);
+        valueView.setTextSize(14);
+        valueView.setTextColor(color);
+        valueView.setTypeface(null, android.graphics.Typeface.BOLD);
+        valueView.setPadding(0, dp(2), 0, 0);
+        textArea.addView(valueView);
+
+        row.addView(textArea);
+        wrapper.addView(row);
+        return wrapper;
     }
 
     private void addStatCell(LinearLayout parent, String label, String value, int color) {
@@ -557,12 +722,27 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(16), dp(12), dp(16), dp(16));
 
+        // 标题行
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        TextView titleIcon = new TextView(this);
+        titleIcon.setText("⌘");
+        titleIcon.setTextSize(14);
+        titleIcon.setTextColor(COLOR_PRIMARY);
+        LinearLayout.LayoutParams tilp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tilp.rightMargin = dp(6);
+        headerRow.addView(titleIcon, tilp);
+
         TextView title = new TextView(this);
         title.setText("检测到的 HTTP 客户端 / 框架");
         title.setTextSize(14);
         title.setTextColor(COLOR_PRIMARY_DARK);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
-        content.addView(title);
+        headerRow.addView(title);
+        content.addView(headerRow);
 
         String raw = data != null ? data.detectedClients : "";
         if (raw == null) raw = "";
@@ -580,7 +760,7 @@ public class MainActivity extends Activity {
             count.setTextColor(COLOR_ACCENT);
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            cp.topMargin = dp(8);
+            cp.topMargin = dp(10);
             content.addView(count, cp);
 
             for (int i = 0; i < clients.size(); i++) {
@@ -591,14 +771,53 @@ public class MainActivity extends Activity {
                 content.addView(row, lp);
             }
         } else {
-            TextView empty = new TextView(this);
-            empty.setText("尚未检测到 HTTP 客户端\n\n请按以下步骤操作：\n  1. 在 LSPosed 管理器中确认模块已启用，作用域包含目标应用\n  2. 点击「启动目标应用」进入答题页\n  3. 回到本页面点击「刷新数据」");
-            empty.setTextSize(12);
-            empty.setTextColor(COLOR_TEXT_SECONDARY);
-            LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(
+            // 空状态：图标 + 标题 + 分步引导
+            LinearLayout emptyBox = new LinearLayout(this);
+            emptyBox.setOrientation(LinearLayout.VERTICAL);
+            emptyBox.setGravity(android.view.Gravity.CENTER);
+            android.graphics.drawable.GradientDrawable emptyBg = new android.graphics.drawable.GradientDrawable();
+            emptyBg.setColor(0xFFFAFBFC);
+            emptyBg.setCornerRadius(dp(8));
+            emptyBg.setStroke(dp(1), 0xFFE0E4EC);
+            emptyBox.setBackground(emptyBg);
+            emptyBox.setPadding(dp(16), dp(20), dp(16), dp(20));
+
+            TextView emptyIcon = new TextView(this);
+            emptyIcon.setText("◇");
+            emptyIcon.setTextSize(28);
+            emptyIcon.setTextColor(0xFFB0BEC5);
+            emptyIcon.setGravity(android.view.Gravity.CENTER);
+            emptyBox.addView(emptyIcon);
+
+            TextView emptyTitle = new TextView(this);
+            emptyTitle.setText("尚未检测到 HTTP 客户端");
+            emptyTitle.setTextSize(13);
+            emptyTitle.setTextColor(COLOR_TEXT_PRIMARY);
+            emptyTitle.setGravity(android.view.Gravity.CENTER);
+            emptyTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+            LinearLayout.LayoutParams etlp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            ep.topMargin = dp(8);
-            content.addView(empty, ep);
+            etlp.topMargin = dp(8);
+            emptyBox.addView(emptyTitle, etlp);
+
+            TextView emptyHint = new TextView(this);
+            emptyHint.setText("目标应用尚未触发 Hook。\n请按以下步骤操作：\n\n" +
+                    "  1. 在 LSPosed 管理器中确认模块已启用，作用域包含 tz.ycsy.az\n" +
+                    "  2. 点击下方「启动目标应用」进入答题页\n" +
+                    "  3. 回到本页面点击「刷新数据」查看检测结果");
+            emptyHint.setTextSize(11);
+            emptyHint.setTextColor(COLOR_TEXT_SECONDARY);
+            emptyHint.setGravity(android.view.Gravity.CENTER);
+            emptyHint.setLineSpacing(dp(2), 1f);
+            LinearLayout.LayoutParams ehlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            ehlp.topMargin = dp(10);
+            emptyBox.addView(emptyHint, ehlp);
+
+            LinearLayout.LayoutParams emptyLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            emptyLp.topMargin = dp(10);
+            content.addView(emptyBox, emptyLp);
         }
 
         card.addView(content);
@@ -614,12 +833,27 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(16), dp(12), dp(16), dp(16));
 
+        // 标题行
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        TextView titleIcon = new TextView(this);
+        titleIcon.setText("↯");
+        titleIcon.setTextSize(14);
+        titleIcon.setTextColor(COLOR_WARNING);
+        LinearLayout.LayoutParams tilp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tilp.rightMargin = dp(6);
+        headerRow.addView(titleIcon, tilp);
+
         TextView title = new TextView(this);
         title.setText("最近请求记录");
         title.setTextSize(14);
         title.setTextColor(COLOR_PRIMARY_DARK);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
-        content.addView(title);
+        headerRow.addView(title);
+        content.addView(headerRow);
 
         List<RequestItem> requests = data != null ? data.requests : null;
 
@@ -733,14 +967,50 @@ public class MainActivity extends Activity {
             }
             pagerRow.addView(nextBtn);
         } else {
-            TextView empty = new TextView(this);
-            empty.setText("尚未捕获任何请求\n\n请先打开目标应用并进入答题页面。答题页面通常使用 WebView，请求将被自动拦截并记录。");
-            empty.setTextSize(12);
-            empty.setTextColor(COLOR_TEXT_SECONDARY);
-            LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(
+            // 空状态：图标 + 标题 + 分步引导
+            LinearLayout emptyBox = new LinearLayout(this);
+            emptyBox.setOrientation(LinearLayout.VERTICAL);
+            emptyBox.setGravity(android.view.Gravity.CENTER);
+            android.graphics.drawable.GradientDrawable emptyBg = new android.graphics.drawable.GradientDrawable();
+            emptyBg.setColor(0xFFFAFBFC);
+            emptyBg.setCornerRadius(dp(8));
+            emptyBg.setStroke(dp(1), 0xFFE0E4EC);
+            emptyBox.setBackground(emptyBg);
+            emptyBox.setPadding(dp(16), dp(20), dp(16), dp(20));
+
+            TextView emptyIcon = new TextView(this);
+            emptyIcon.setText("◇");
+            emptyIcon.setTextSize(28);
+            emptyIcon.setTextColor(0xFFB0BEC5);
+            emptyIcon.setGravity(android.view.Gravity.CENTER);
+            emptyBox.addView(emptyIcon);
+
+            TextView emptyTitle = new TextView(this);
+            emptyTitle.setText("尚未捕获任何请求");
+            emptyTitle.setTextSize(13);
+            emptyTitle.setTextColor(COLOR_TEXT_PRIMARY);
+            emptyTitle.setGravity(android.view.Gravity.CENTER);
+            emptyTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+            LinearLayout.LayoutParams etlp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            ep.topMargin = dp(8);
-            content.addView(empty, ep);
+            etlp.topMargin = dp(8);
+            emptyBox.addView(emptyTitle, etlp);
+
+            TextView emptyHint = new TextView(this);
+            emptyHint.setText("请先打开目标应用并进入答题页面。\n答题页面通常使用 WebView 加载，\n其中的网络请求将被自动拦截并记录。");
+            emptyHint.setTextSize(11);
+            emptyHint.setTextColor(COLOR_TEXT_SECONDARY);
+            emptyHint.setGravity(android.view.Gravity.CENTER);
+            emptyHint.setLineSpacing(dp(2), 1f);
+            LinearLayout.LayoutParams ehlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            ehlp.topMargin = dp(10);
+            emptyBox.addView(emptyHint, ehlp);
+
+            LinearLayout.LayoutParams emptyLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            emptyLp.topMargin = dp(10);
+            content.addView(emptyBox, emptyLp);
         }
 
         card.addView(content);
