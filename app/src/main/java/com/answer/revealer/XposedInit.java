@@ -629,22 +629,38 @@ public class XposedInit implements IXposedHookLoadPackage {
             JSONArray options = data.optJSONArray("answerOptionList");
             if (options == null || options.length() == 0) return bodyStr;
             boolean changed = false;
+            // 收集所有正确选项文本——多选题时多个，拼接后存到 sCorrectAnswerText
+            java.util.List<String> correctAnswers = new java.util.ArrayList<>();
             for (int i = 0; i < options.length(); i++) {
                 JSONObject opt = options.optJSONObject(i);
                 if (opt == null) continue;
                 if (opt.optInt("isRight") == 1) {
                     String text = opt.optString("optionText", "");
-                    // 存储正确答案原始文本，供 JS 直接选中使用
-                    sCorrectAnswerText = text;
-                    sMarkedAnswerText = "【 " + text + " 正确答案 】";
-                    sCorrectAnswerTimestamp = System.currentTimeMillis();
-                    // 重置"已自动选中"标志（这是一道新题目，可以再次自动选中）
-                    sAlreadyAutoSelected.set(false);
-                    // 同时写入 ContentProvider 作为备份
-                    writeAnswerToProvider(text, sMarkedAnswerText);
-                    opt.put("optionText", sMarkedAnswerText);
+                    if (text != null && !text.isEmpty()) {
+                        correctAnswers.add(text);
+                    }
+                    String marked = "【 " + text + " 正确答案 】";
+                    opt.put("optionText", marked);
                     changed = true;
                 }
+            }
+            // 将所有正确答案拼接后存储（JS 层可根据是否含"、"判断为多选题）
+            if (changed && !correctAnswers.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                StringBuilder markedSb = new StringBuilder();
+                for (int i = 0; i < correctAnswers.size(); i++) {
+                    if (i > 0) { sb.append("、"); }
+                    sb.append(correctAnswers.get(i));
+                }
+                for (int i = 0; i < correctAnswers.size(); i++) {
+                    if (i > 0) { markedSb.append("、"); }
+                    markedSb.append("【 ").append(correctAnswers.get(i)).append(" 正确答案 】");
+                }
+                sCorrectAnswerText = sb.toString();
+                sMarkedAnswerText = markedSb.toString();
+                sCorrectAnswerTimestamp = System.currentTimeMillis();
+                sAlreadyAutoSelected.set(false);
+                writeAnswerToProvider(sCorrectAnswerText, sMarkedAnswerText);
             }
             return changed ? root.toString() : bodyStr;
         } catch (Throwable t) {
@@ -1109,13 +1125,27 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("cur=cur.parentElement;}");
         sb.append("l('FC:fallback click');dc(el);}");
 
-        // 策略1：TreeWalker 找"正确答案"标记（多选题时遍历所有匹配项）
+        // 策略1：TreeWalker 找"正确答案"标记（多选题：遍历全部；单选题：找到即停）
         sb.append("l('v8 start AT='+AT+' MULTI='+IS_MULTI);");
         sb.append("if(!D.body){l('body null');}else{");
         sb.append("var matches=[];var tw=D.createTreeWalker(D.body,NodeFilter.SHOW_TEXT,null,false);");
         sb.append("var node;while(node=tw.nextNode()){if(node.nodeValue&&node.nodeValue.indexOf('正确答案')>=0){var p=node.parentElement;if(p){matches.push(p);}}}");
         sb.append("l('策略1:匹配'+matches.length+'个');");
-        sb.append("for(var mi=0;mi<matches.length;mi++){try{fc(matches[mi]);}catch(e){}}");
+        sb.append("function clickOne(el){try{");
+        sb.append("SEL++;l('★CLICK! tag='+el.tagName+' txt='+(el.innerText||el.value||'').substring(0,30));");
+        sb.append("try{el.checked=true;el.setAttribute('checked','checked');}catch(e){}");
+        sb.append("try{if(el.click)el.click();}catch(e){}");
+        sb.append("try{var p=el;for(var z=0;z<15;z++){if(!p)break;if(p.onclick||(p.getAttribute&&p.getAttribute('onclick'))||p.tagName==='INPUT'||p.tagName==='BUTTON'||p.tagName==='LABEL'){if(p!==el){try{p.click();}catch(e){}}break;}p=p.parentElement;}}catch(e){}");
+        sb.append("try{var evs=['click','mousedown','mouseup','change','input'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
+        sb.append("try{el.style.backgroundColor='#4CAF50';el.style.color='#fff';}catch(e){}");
+        sb.append("}catch(e){}}");
+        // 遍历每个匹配：先找元素本身或子元素/父元素中的可点击元素，找到则调用 clickOne
+        sb.append("for(var mi=0;mi<matches.length;mi++){try{var em=matches[mi];var tgt=null;");
+        sb.append("if(em.tagName==='INPUT'||em.tagName==='BUTTON'||em.tagName==='LABEL'||em.onclick||(em.getAttribute&&em.getAttribute('onclick')))tgt=em;");
+        sb.append("if(!tgt){var child=em.querySelector?em.querySelector('input,button,label,[onclick]'):null;if(child)tgt=child;}");
+        sb.append("if(!tgt){var pc=em;for(var zi=0;zi<20;zi++){if(!pc)break;if(pc.tagName==='INPUT'||pc.tagName==='BUTTON'||pc.tagName==='LABEL'||pc.onclick||(pc.getAttribute&&pc.getAttribute('onclick'))){tgt=pc;break;}pc=pc.parentElement;}}");
+        sb.append("if(tgt){clickOne(tgt);if(!IS_MULTI)break;}else{clickOne(em);if(!IS_MULTI)break;}");
+        sb.append("}catch(e){}}");
 
         // 策略2：querySelectorAll 兜底
         sb.append("if(SEL===0){var all=D.body.querySelectorAll('*');l('策略2:scan '+all.length);");
