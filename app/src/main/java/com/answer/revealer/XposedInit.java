@@ -775,6 +775,87 @@ public class XposedInit implements IXposedHookLoadPackage {
                     });
         } catch (Throwable ignored) {}
 
+        // === 2b. WebChromeClient.onConsoleMessage - 捕获 JS console 日志输出到 XposedBridge ===
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "android.webkit.WebChromeClient", cl, "onConsoleMessage",
+                    "android.webkit.ConsoleMessage",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                Object msg = param.args[0];
+                                if (msg == null) return;
+                                String text = (String) XposedHelpers.callMethod(msg, "message");
+                                if (text != null && text.contains("答案模块")) {
+                                    try {
+                                        XposedBridge.log("[答案模块] JS: " + text);
+                                    } catch (Throwable ignored) {}
+                                }
+                            } catch (Throwable ignored) {}
+                        }
+                    });
+        } catch (Throwable ignored) {}
+
+        // === 2c. WebView.onPageStarted - 页面开始加载时，提前设置好点击准备 ===
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "android.webkit.WebViewClient", cl, "onPageStarted",
+                    "android.webkit.WebView", String.class, "android.graphics.Bitmap",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(final MethodHookParam param) {
+                            try {
+                                if (!readAutoSelectEnabled()) return;
+                                final Object webView = param.args[0];
+                                if (webView == null) return;
+
+                                // 延迟注入多次，覆盖不同 DOM 就绪时机
+                                final long[] delays = {1500, 3000, 4500, 6000};
+                                for (int i = 0; i < delays.length; i++) {
+                                    final int attempt = i + 1;
+                                    new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            try {
+                                                String js = buildAutoClickJS();
+                                                try {
+                                                    XposedHelpers.callMethod(webView, "loadUrl", "javascript:" + js);
+                                                } catch (Throwable ignored) {
+                                                    XposedHelpers.callMethod(webView, "evaluateJavascript", js, null);
+                                                }
+                                                try {
+                                                    XposedBridge.log("[答案模块] onPageStarted 延迟" + attempt + "次 - 已注入JS");
+                                                } catch (Throwable ignored) {}
+                                            } catch (Throwable ignored) {}
+                                        }
+                                    }, delays[i]);
+                                }
+                            } catch (Throwable ignored) {}
+                        }
+                    });
+        } catch (Throwable ignored) {}
+
+        // === 2d. WebView.loadUrl 拦截：确保 javascript: URL 正确注入 ===
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "android.webkit.WebView", cl, "loadUrl",
+                    String.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            try {
+                                String url = (String) param.args[0];
+                                if (url != null && url.startsWith("javascript:") && url.contains("答案模块")) {
+                                    try {
+                                        XposedBridge.log("[答案模块] loadUrl 注入javascript: URL，长度=" + url.length());
+                                    } catch (Throwable ignored) {}
+                                }
+                            } catch (Throwable ignored) {}
+                        }
+                    });
+        } catch (Throwable ignored) {}
+
         // === 3. Activity onResume → 扫描原生 UI 找正确答案并点击 ===
         try {
             XposedHelpers.findAndHookMethod("android.app.Activity", cl, "onResume",
@@ -890,48 +971,104 @@ public class XposedInit implements IXposedHookLoadPackage {
 
     // ============ 构建增强版自动点击 JS ============
     private String buildAutoClickJS() {
-        return "(function(){" +
-            "var m='正确答案';" +
-            "var found=false;" +
-            "var elements=document.querySelectorAll('*');" +
-            "for(var i=0;i<elements.length;i++){" +
-                "var e=elements[i];" +
-                "var t=e.innerText||e.textContent||'';" +
-                "if(t.indexOf(m)>=0){" +
-                    "found=true;" +
-                    "var c=e;" +
-                    "for(var j=0;j<8&&c;j++){" +
-                        "if(c.tagName&&(c.tagName==='BUTTON'||c.tagName==='DIV'||c.tagName==='SPAN')){" +
-                            "var style=window.getComputedStyle(c);" +
-                            "if(style&&style.cursor==='pointer'){" +
-                                "if(typeof c.click==='function'){" +
-                                    "c.click();" +
-                                    "console.log('[答案模块] JS点击成功(tagName)');" +
-                                    "return;" +
-                                "}" +
-                            "}" +
-                        "}" +
-                        "if(typeof c.click==='function'){" +
-                            "try{" +
-                                "c.click();" +
-                                "console.log('[答案模块] JS点击成功(click)');" +
-                                "return;" +
-                            "}catch(e){}" +
-                        "}" +
-                        "if(typeof c.dispatchEvent==='function'){" +
-                            "try{" +
-                                "var evt=new MouseEvent('click',{bubbles:true,cancelable:true,view:window});" +
-                                "c.dispatchEvent(evt);" +
-                                "console.log('[答案模块] JS点击成功(dispatchEvent)');" +
-                                "return;" +
-                            "}catch(e){}" +
-                        "}" +
-                        "c=c.parentElement;" +
-                    "}" +
-                "}" +
-            "}" +
-            "if(!found)console.log('[答案模块] JS未找到包含标记的元素');" +
-        "})();";
+        // 注意：JS 中全部使用单引号 '，避免与 Java 字符串双引号冲突
+        StringBuilder js = new StringBuilder();
+        js.append("(function(){");
+        js.append("var m='正确答案';");
+        js.append("var clicked=false;");
+        js.append("var foundCount=0;");
+
+        // ---- 辅助：尝试点击元素（多种方式）
+        js.append("function tryClick(el,src){");
+        js.append("if(!el||clicked)return false;");
+        js.append("var n=0;");
+        js.append("try{el.click();n++;}catch(e){}");
+        js.append("if(!clicked){try{");
+        js.append("var e1=new MouseEvent('click',{bubbles:true,cancelable:true,view:window});");
+        js.append("el.dispatchEvent(e1);n++;");
+        js.append("}catch(e){}}");
+        js.append("if(!clicked){try{");
+        js.append("var e2=new MouseEvent('mousedown',{bubbles:true,cancelable:true});");
+        js.append("el.dispatchEvent(e2);");
+        js.append("var e3=new MouseEvent('mouseup',{bubbles:true,cancelable:true});");
+        js.append("el.dispatchEvent(e3);n++;");
+        js.append("}catch(e){}}");
+        js.append("if(!clicked){try{");
+        js.append("var rect=el.getBoundingClientRect();");
+        js.append("var cx=rect.left+rect.width/2;");
+        js.append("var cy=rect.top+rect.height/2;");
+        js.append("var tp={bubbles:true,cancelable:true,touches:[{identifier:1,clientX:cx,clientY:cy,target:el}]};");
+        js.append("el.dispatchEvent(new TouchEvent('touchstart',tp));");
+        js.append("el.dispatchEvent(new TouchEvent('touchend',tp));n++;");
+        js.append("}catch(e){}}");
+        js.append("if(n>0){clicked=true;");
+        js.append("console.log('[答案模块] JS点击成功: '+src+' n='+n);");
+        js.append("return true;}");
+        js.append("return false;");
+        js.append("}");
+
+        // ---- 扫描所有元素找含"正确答案"的
+        js.append("var all=document.querySelectorAll('*');");
+        js.append("var list=[];");
+        js.append("for(var i=0;i<all.length;i++){");
+        js.append("var el=all[i];");
+        js.append("var txt=(el.innerText||el.textContent||'').toString();");
+        js.append("if(txt.indexOf(m)>=0){list.push(el);}");
+        js.append("}");
+        js.append("foundCount=list.length;");
+        js.append("console.log('[答案模块] JS找到'+foundCount+'个含正确答案元素');");
+
+        // ---- 对每个候选元素：打印信息 + 向上递归点击
+        js.append("for(var ci=0;ci<list.length&&!clicked;ci++){");
+        js.append("var cur=list[ci];");
+        js.append("try{console.log('[答案模块] 候选'+ci+': '+cur.tagName+' '+cur.innerText.substring(0,20));}catch(e){}");
+
+        // 向上递归 20 层，每层都尝试点击
+        js.append("var up=cur;");
+        js.append("for(var lv=0;lv<20&&!clicked;lv++){");
+        js.append("if(!up)break;");
+        js.append("var info='';try{info=up.tagName;}catch(e){info='?';}");
+        js.append("if(tryClick(up,'F'+lv+'-'+info)){break;}");
+        js.append("up=up.parentElement;");
+        js.append("}");
+
+        // 尝试点击父元素的所有子元素（答案可能在子容器的某个兄弟元素上）
+        js.append("if(!clicked){");
+        js.append("var p=cur.parentElement;");
+        js.append("if(p){");
+        js.append("var sibs=p.children;");
+        js.append("for(var si=0;sibs&&si<sibs.length&&!clicked;si++){");
+        js.append("var s=sibs[si];");
+        js.append("tryClick(s,'S'+si+'-'+s.tagName);");
+        js.append("}");
+        js.append("}");
+        js.append("}");
+        js.append("}");
+
+        // ---- MutationObserver 监听后续变化（答案可能是动态加载的）
+        js.append("if(!clicked){try{");
+        js.append("var MutationObserver=window.MutationObserver||window.WebKitMutationObserver;");
+        js.append("var obs=new MutationObserver(function(muts){");
+        js.append("for(var mi=0;mi<muts.length&&!clicked;mi++){");
+        js.append("var m=muts[mi];");
+        js.append("var t=m.target;");
+        js.append("var txt2='';try{txt2=t.innerText||t.textContent||'';}catch(e){}");
+        js.append("if(txt2&&txt2.indexOf(m)>=0){");
+        js.append("var u=t;for(var lv2=0;lv2<15&&!clicked;lv2++){");
+        js.append("if(!u)break;if(tryClick(u,'M'+lv2+'-'+u.tagName)){obs.disconnect();return;}");
+        js.append("u=u.parentElement;");
+        js.append("}");
+        js.append("}");
+        js.append("}");
+        js.append("});");
+        js.append("obs.observe(document.body||document.documentElement,{childList:true,subtree:true,characterData:true});");
+        js.append("setTimeout(function(){obs.disconnect();},8000);");
+        js.append("console.log('[答案模块] MutationObserver 已启动');");
+        js.append("}catch(e){console.log('[答案模块] MutationObserver 失败: '+e.message);}}");
+
+        js.append("console.log('[答案模块] JS扫描完毕 clicked='+clicked);");
+        js.append("})();");
+        return js.toString();
     }
 
     // ============ 增强版点击：多种方式尝试 ============
