@@ -935,8 +935,9 @@ public class XposedInit implements IXposedHookLoadPackage {
             String markerText = sMarkedAnswerText != null ? sMarkedAnswerText : ("【 " + answerText + " 正确答案 】");
             String safeM = escapeJsString(markerText);
             String safeA = escapeJsString(answerText);
+            String safeTag = escapeJsString(sourceTag);
 
-            final String js = buildAutoClickJS2(safeA, safeM);
+            final String js = buildAutoClickJS2(safeA, safeM, safeTag);
             final String shortAnswer = answerText.substring(0, Math.min(20, answerText.length()));
 
             try {
@@ -1007,19 +1008,21 @@ public class XposedInit implements IXposedHookLoadPackage {
         return sb.toString();
     }
 
-    // ============ 构建自动选中 JS：只点击含"正确答案"标记的元素（v5 — 简洁版）============
-    private static String buildAutoClickJS2(String safeA, String safeM) {
+    // ============ 构建自动选中 JS：只点击含"正确答案"标记的元素（v6 — 带注入来源标识）============
+    private static String buildAutoClickJS2(String safeA, String safeM, String safeTag) {
         StringBuilder sb = new StringBuilder();
         sb.append("try{");
+        // 注入来源标识 TAG（如 [onPageFinished-1500ms]），让 JS 日志可追溯到具体注入点
+        sb.append("var TAG='").append(safeTag).append("';");
         // AT = 原始答案文本；AM = 标记文本（【 xxx 正确答案 】）
         sb.append("var AT='").append(safeA).append("';var AM='").append(safeM).append("';");
         sb.append("var D=document;var SEL=0;var LOG=[];");
 
-        // === log() — 记录并输出 ===
-        sb.append("function l(m){LOG.push(m);try{console.log('[答案模块] '+m);}catch(e){}}");
+        // === log() — 记录并输出（TAG 前缀标识注入来源）===
+        sb.append("function l(m){LOG.push(m);try{console.log('[答案模块] '+TAG+' '+m);}catch(e){}}");
 
         // === dc(el) — 终极点击函数：checked + click() + 各种事件 ===
-        sb.append("function dc(el){if(SEL>0||!el)return;SEL++;l('DC:tag='+el.tagName+' cls='+el.className+' txt='+(el.innerText||el.value||'').toString().substring(0,30));");
+        sb.append("function dc(el){if(SEL>0||!el)return;SEL++;l('★ 成功选中! tag='+el.tagName+' cls='+el.className+' txt='+(el.innerText||el.value||'').toString().substring(0,30));");
         sb.append("try{el.checked=true;el.setAttribute('checked','checked');el.setAttribute('aria-checked','true');}catch(e){}");
         sb.append("try{if(el.focus)el.focus();}catch(e){}");
         sb.append("try{if(el.click)el.click();}catch(e){}");
@@ -1038,7 +1041,7 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("l('FC:没找到可点击元素，直接点击当前元素');dc(el);}");
 
         // === 策略1：TreeWalker 遍历所有文本节点，找"正确答案"标记 ===
-        sb.append("l('v5 start. AT='+AT+' AM='+AM);");
+        sb.append("l('v6 start. AT='+AT+' AM='+AM);");
         sb.append("if(!D.body){l('body is null, trying later');}else{");
         sb.append("var tw=D.createTreeWalker(D.body,NodeFilter.SHOW_TEXT,null,false);");
         sb.append("var node,matchedTextEl=null;while(node=tw.nextNode()){if(node.nodeValue&&node.nodeValue.indexOf('正确答案')>=0){var p=node.parentElement;if(p){matchedTextEl=p;l('策略1:文本节点找到正确答案 txt='+node.nodeValue.substring(0,40)+' parent='+p.tagName);break;}}}");
@@ -1060,10 +1063,10 @@ public class XposedInit implements IXposedHookLoadPackage {
         // === 策略4：MutationObserver 监听 10秒（应对动态加载页面）===
         sb.append("if(SEL===0&&window.MutationObserver){l('策略4:启动 MutationObserver');try{var obs=new MutationObserver(function(){if(SEL>0){obs.disconnect();return;}var ns=D.body.querySelectorAll('label,div,span,li,input,button');for(var oi=0;oi<ns.length;oi++){var t4='';try{t4=(ns[oi].innerText||ns[oi].textContent||'').toString();}catch(e){}if(t4&&t4.indexOf('正确答案')>=0){fc(ns[oi]);if(SEL>0){obs.disconnect();}}}});obs.observe(D.body||D.documentElement,{childList:true,subtree:true,characterData:true});setTimeout(function(){try{obs.disconnect();}catch(e){}},10000);}catch(e){l('策略4失败: '+e.message);}}");
 
-        sb.append("l('v5 done. SEL='+SEL);");
-        sb.append("}catch(e){try{console.log('[答案模块] TOPERR:'+e.message);}catch(e2){}}");
+        sb.append("l('v6 done. SEL='+SEL);");
+        sb.append("}catch(e){try{console.log('[答案模块] '+TAG+' TOPERR:'+e.message);}catch(e2){}}");
         // 返回执行摘要字符串（evaluateJavascript 的回调中可以捕获）
-        sb.append("'[答案模块] JS执行摘要: selected='+SEL+' log='+LOG.join('|')");
+        sb.append("'[答案模块] '+TAG+' JS执行摘要: selected='+SEL+' log='+LOG.join('|')");
         return sb.toString();
     }
 
