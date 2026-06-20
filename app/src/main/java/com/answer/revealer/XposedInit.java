@@ -772,8 +772,27 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 Object msg = param.args[0];
                                 if (msg == null) return;
                                 String text = (String) XposedHelpers.callMethod(msg, "message");
-                                if (text != null && (text.contains("答案模块") || text.contains("ANSWER"))) {
-                                    try { XposedBridge.log("[答案模块] JS: " + text); } catch (Throwable ignored) {}
+                                if (text != null && text.contains("答案模块")) {
+                                    try { XposedBridge.log("[答案模块] JS(ChromeConsole): " + text); } catch (Throwable ignored) {}
+                                }
+                            } catch (Throwable ignored) {}
+                        }
+                    });
+        } catch (Throwable ignored) {}
+
+        // === 1b. X5 WebChromeClient（腾讯内核）onConsoleMessage ===
+        try {
+            XposedHelpers.findAndHookMethod("com.tencent.smtt.sdk.WebChromeClient", cl, "onConsoleMessage",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                for (Object arg : param.args) {
+                                    if (arg == null) continue;
+                                    String t = arg.toString();
+                                    if (t != null && t.contains("答案模块")) {
+                                        try { XposedBridge.log("[答案模块] JS(X5Console): " + t); } catch (Throwable ignored) {}
+                                    }
                                 }
                             } catch (Throwable ignored) {}
                         }
@@ -914,16 +933,14 @@ public class XposedInit implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {}
     }
 
-    // ============ 统一的 JS 注入入口（用 ValueCallback 捕获执行结果）============
-    private static void injectJsIntoWebView(Object webViewObj, String sourceTag) {
+    // ============ 统一的 JS 注入入口（用 ValueCallback 捕获 JS 执行结果 + document.title 可视化） ============
+    private static void injectJsIntoWebView(Object webViewObj, final String sourceTag) {
         try {
             if (!readAutoSelectEnabled()) return;
             if (webViewObj == null) return;
 
             // 如果已经成功选中过，就不再重复（防止在选项间乱跳）
-            if (sAlreadyAutoSelected.get()) {
-                return;
-            }
+            if (sAlreadyAutoSelected.get()) return;
 
             String answerText = sCorrectAnswerText;
             if (answerText == null || answerText.isEmpty()) return;
@@ -931,7 +948,7 @@ public class XposedInit implements IXposedHookLoadPackage {
             long age = System.currentTimeMillis() - sCorrectAnswerTimestamp;
             if (sCorrectAnswerTimestamp > 0 && age > 30000) return;
 
-            // 核心：优先使用"正确答案"标记文本（【 xxx 正确答案 】）搜索
+            // 构建 JS 参数
             String markerText = sMarkedAnswerText != null ? sMarkedAnswerText : ("【 " + answerText + " 正确答案 】");
             String safeM = escapeJsString(markerText);
             String safeA = escapeJsString(answerText);
@@ -940,35 +957,62 @@ public class XposedInit implements IXposedHookLoadPackage {
             final String js = buildAutoClickJS2(safeA, safeM, safeTag);
             final String shortAnswer = answerText.substring(0, Math.min(20, answerText.length()));
 
+            // === 日志：注入前 ===
             try {
                 XposedBridge.log("[答案模块] " + sourceTag + " -> 尝试注入JS(答案=" + shortAnswer + " JS长=" + js.length() + ")");
             } catch (Throwable ignored) {}
 
-            // ========== 方式1：evaluateJavascript + ValueCallback 捕获执行结果 ==========
+            // === 构造 ValueCallback 来捕获 evaluateJavascript 返回值（核心：不依赖 console.log）===
+            Object callback = null;
+            try {
+                callback = java.lang.reflect.Proxy.newProxyInstance(
+                        android.webkit.ValueCallback.class.getClassLoader(),
+                        new Class<?>[]{android.webkit.ValueCallback.class},
+                        new java.lang.reflect.InvocationHandler() {
+                            @Override
+                            public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] args) {
+                                try {
+                                    String name = method.getName();
+                                    if ("onReceiveValue".equals(name) && args != null && args.length > 0) {
+                                        Object val = args[0];
+                                        String valStr = val == null ? "null" : val.toString();
+                                        if (valStr.contains("正确答案") || valStr.contains("SEL")) {
+                                            try {
+                                                XposedBridge.log("[答案模块] " + sourceTag + " -> JS返回值: " + valStr);
+                                            } catch (Throwable ignored2) {}
+                                        }
+                                    }
+                                } catch (Throwable ignored) {}
+                                return null;
+                            }
+                        });
+            } catch (Throwable ignored) {}
+
+            // === 方式1：evaluateJavascript + ValueCallback ===
             boolean injected = false;
             try {
-                XposedHelpers.callMethod(webViewObj, "evaluateJavascript", js, null);
+                XposedHelpers.callMethod(webViewObj, "evaluateJavascript", js, callback);
                 injected = true;
-                try { XposedBridge.log("[答案模块] " + sourceTag + " -> evaluateJavascript 已调用"); } catch (Throwable ignored) {}
+                try { XposedBridge.log("[答案模块] " + sourceTag + " -> evaluateJavascript 已调用(ValueCallback=" + (callback != null) + ")"); } catch (Throwable ignored) {}
             } catch (Throwable te) {
                 try { XposedBridge.log("[答案模块] " + sourceTag + " -> evaluateJavascript 失败: " + te.getMessage()); } catch (Throwable ignored) {}
             }
 
-            // ========== 方式2：loadUrl("javascript:") 兜底 ==========
+            // === 方式2：loadUrl("javascript:") 兜底（没有返回值机制，依赖 title 可视化） ===
             if (!injected) {
                 try {
                     XposedHelpers.callMethod(webViewObj, "loadUrl", "javascript:" + js);
                     injected = true;
-                    try { XposedBridge.log("[答案模块] " + sourceTag + " -> loadUrl 已调用"); } catch (Throwable ignored) {}
+                    try { XposedBridge.log("[答案模块] " + sourceTag + " -> loadUrl 已调用(无返回值)"); } catch (Throwable ignored) {}
                 } catch (Throwable te) {
                     try { XposedBridge.log("[答案模块] " + sourceTag + " -> loadUrl 失败: " + te.getMessage()); } catch (Throwable ignored) {}
                 }
             }
 
-            // 记录状态：只要有一个方式调用成功就标记为已尝试
+            // === 记录状态 ===
             if (injected) {
                 sAlreadyAutoSelected.set(true);
-                try { XposedBridge.log("[答案模块] " + sourceTag + " -> JS注入成功"); } catch (Throwable ignored) {}
+                try { XposedBridge.log("[答案模块] " + sourceTag + " -> JS已注入（看页面标题变化或JS返回值日志）"); } catch (Throwable ignored) {}
             } else {
                 try { XposedBridge.log("[答案模块] " + sourceTag + " -> 所有JS注入方式均失败"); } catch (Throwable ignored) {}
             }
@@ -1008,65 +1052,68 @@ public class XposedInit implements IXposedHookLoadPackage {
         return sb.toString();
     }
 
-    // ============ 构建自动选中 JS：只点击含"正确答案"标记的元素（v6 — 带注入来源标识）============
+    // ============ 构建自动选中 JS：只点击含"正确答案"标记的元素（v7 — TAG + title 双渠道追踪） ============
     private static String buildAutoClickJS2(String safeA, String safeM, String safeTag) {
         StringBuilder sb = new StringBuilder();
         sb.append("try{");
         // 注入来源标识 TAG（如 [onPageFinished-1500ms]），让 JS 日志可追溯到具体注入点
         sb.append("var TAG='").append(safeTag).append("';");
-        // AT = 原始答案文本；AM = 标记文本（【 xxx 正确答案 】）
         sb.append("var AT='").append(safeA).append("';var AM='").append(safeM).append("';");
-        sb.append("var D=document;var SEL=0;var LOG=[];");
+        sb.append("var D=document;var SEL=0;var LOG=[];var FOUND='';");
 
-        // === log() — 记录并输出（TAG 前缀标识注入来源）===
-        sb.append("function l(m){LOG.push(m);try{console.log('[答案模块] '+TAG+' '+m);}catch(e){}}");
+        // === l(msg)：同时写 console + document.title + LOG 数组，三路齐发 ===
+        sb.append("function l(m){LOG.push(m);try{console.log('[答案模块]'+TAG+' '+m);}catch(e){}try{document.title=TAG+':'+String(m).substring(0,40);}catch(e){}}");
 
-        // === dc(el) — 终极点击函数：checked + click() + 各种事件 ===
-        sb.append("function dc(el){if(SEL>0||!el)return;SEL++;l('★ 成功选中! tag='+el.tagName+' cls='+el.className+' txt='+(el.innerText||el.value||'').toString().substring(0,30));");
+        // === dc(el)：终极点击函数（找到答案后高亮并点击）===
+        sb.append("function dc(el){if(SEL>0||!el)return;SEL++;");
+        sb.append("FOUND='"+TAG+" tag='+el.tagName+' cls='+el.className+' txt='+(el.innerText||el.value||'').toString().substring(0,30);");
+        sb.append("try{console.log('[答案模块]'+TAG+' ★点击成功! '+FOUND);}catch(e){}");
+        sb.append("try{document.title='[A]'+TAG+':'+FOUND.substring(0,30);}catch(e){}");
         sb.append("try{el.checked=true;el.setAttribute('checked','checked');el.setAttribute('aria-checked','true');}catch(e){}");
         sb.append("try{if(el.focus)el.focus();}catch(e){}");
         sb.append("try{if(el.click)el.click();}catch(e){}");
-        sb.append("try{var p=el;for(var z=0;z<20;z++){if(!p)break;if(p.tagName==='INPUT'||p.tagName==='BUTTON'||p.tagName==='LABEL'||p.onclick!=null||p.getAttribute('onclick')){if(p!==el){try{p.click();l('DC:parent.click '+p.tagName);}catch(e){}}break;}p=p.parentElement;}}catch(e){}");
-        sb.append("try{var evs=['click','mousedown','mouseup','change','input','touchstart','touchend','tap'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi].indexOf('touch')>=0){evt=document.createEvent('TouchEvent');try{evt.initEvent(evs[vi],true,true);}catch(e){continue;}}else if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=document.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}l('DC:events dispatched');}catch(e){}");
+        sb.append("try{var p=el;for(var z=0;z<20;z++){if(!p)break;if(p.tagName==='INPUT'||p.tagName==='BUTTON'||p.tagName==='LABEL'||p.onclick!=null||p.getAttribute&&p.getAttribute('onclick')){if(p!==el){try{p.click();}catch(e){}}break;}p=p.parentElement;}}catch(e){}");
+        sb.append("try{var evs=['click','mousedown','mouseup','change','input','touchstart','touchend','tap'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi].indexOf('touch')>=0){evt=document.createEvent('TouchEvent');try{evt.initEvent(evs[vi],true,true);}catch(e){continue;}}else if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=document.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
         sb.append("try{el.style.backgroundColor='#4CAF50';el.style.color='#ffffff';}catch(e){}");
         sb.append("l('DC:done SEL='+SEL);}");
 
-        // === findClickable(el) — 从元素向上找可点击的元素 ===
-        sb.append("function fc(el){if(SEL>0)return;l('FC:从'+el.tagName+' 开始查找 input/button/lable');");
+        // === fc(el)：从元素向上找可点击的元素 ===
+        sb.append("function fc(el){if(SEL>0)return;l('FC:从'+el.tagName+' 查找');");
         sb.append("var cur=el;for(var li=0;li<25;li++){if(!cur)break;");
         sb.append("var tn=cur.tagName;if(tn==='INPUT'||tn==='BUTTON'||tn==='LABEL'||tn==='A'||tn==='SELECT'||tn==='TEXTAREA'){l('FC:找到input型 '+tn);dc(cur);return;}");
         sb.append("if(cur.onclick||cur.getAttribute&&cur.getAttribute('onclick')){l('FC:找到onclick型 '+tn);dc(cur);return;}");
-        sb.append("var inps=cur.querySelectorAll?cur.querySelectorAll('input,button,label,[onclick]'):null;if(inps&&inps.length>0){l('FC:找到子元素 '+inps.length+'个');for(var xi=0;xi<inps.length;xi++){try{dc(inps[xi]);if(SEL>0)return;}catch(e){}}}");
+        sb.append("var inps=cur.querySelectorAll?cur.querySelectorAll('input,button,label,[onclick]'):null;if(inps&&inps.length>0){l('FC:子元素'+inps.length+'个');for(var xi=0;xi<inps.length;xi++){try{dc(inps[xi]);if(SEL>0)return;}catch(e){}}}");
         sb.append("cur=cur.parentElement;}");
-        sb.append("l('FC:没找到可点击元素，直接点击当前元素');dc(el);}");
+        sb.append("l('FC:直接点击当前元素');dc(el);}");
 
-        // === 策略1：TreeWalker 遍历所有文本节点，找"正确答案"标记 ===
-        sb.append("l('v6 start. AT='+AT+' AM='+AM);");
-        sb.append("if(!D.body){l('body is null, trying later');}else{");
+        // === 策略1：TreeWalker 找"正确答案"标记文本 ===
+        sb.append("l('v7 start AT='+AT);");
+        sb.append("if(!D.body){l('body null');}else{");
         sb.append("var tw=D.createTreeWalker(D.body,NodeFilter.SHOW_TEXT,null,false);");
-        sb.append("var node,matchedTextEl=null;while(node=tw.nextNode()){if(node.nodeValue&&node.nodeValue.indexOf('正确答案')>=0){var p=node.parentElement;if(p){matchedTextEl=p;l('策略1:文本节点找到正确答案 txt='+node.nodeValue.substring(0,40)+' parent='+p.tagName);break;}}}");
-        sb.append("if(matchedTextEl){fc(matchedTextEl);}else{l('策略1:未找到含正确答案的文本节点');}");
+        sb.append("var node,matchedTextEl=null;while(node=tw.nextNode()){if(node.nodeValue&&node.nodeValue.indexOf('正确答案')>=0){var p=node.parentElement;if(p){matchedTextEl=p;l('策略1:找到 txt='+node.nodeValue.substring(0,40));break;}}}");
+        sb.append("if(matchedTextEl){fc(matchedTextEl);}else{l('策略1:未找到');}");
 
-        // === 策略2：querySelectorAll('*') 兜底，遍历所有元素 ===
+        // === 策略2：querySelectorAll('*') 兜底 ===
         sb.append("if(SEL===0){");
-        sb.append("var all=D.body.querySelectorAll('*');l('策略2:遍历 '+all.length+' 个元素');");
+        sb.append("var all=D.body.querySelectorAll('*');l('策略2:scan '+all.length);");
         sb.append("for(var qi=0;qi<all.length;qi++){var txt3='';try{txt3=(all[qi].innerText||all[qi].textContent||'').toString();}catch(e){}");
-        sb.append("if(txt3&&txt3.indexOf('正确答案')>=0){l('策略2:找到元素 '+all[qi].tagName+' txt='+txt3.substring(0,40));fc(all[qi]);if(SEL>0)break;}}}");
+        sb.append("if(txt3&&txt3.indexOf('正确答案')>=0){l('策略2:找到 '+all[qi].tagName);fc(all[qi]);if(SEL>0)break;}}}");
 
-        // === 策略3：只搜索原始答案文本，找最接近的输入元素 ===
-        sb.append("if(SEL===0&&AT){l('策略3:按原始答案文本搜索 '+AT);");
+        // === 策略3：按原始答案文本搜索 ===
+        sb.append("if(SEL===0&&AT){l('策略3:按答案文本搜索 '+AT);");
         sb.append("var all3=D.body.querySelectorAll('label,div,span,li,p,input,button');");
         sb.append("for(var si=0;si<all3.length;si++){var t3='';try{t3=(all3[si].innerText||all3[si].textContent||all3[si].value||'').toString();}catch(e){}if(t3&&t3.length<200&&t3.indexOf(AT)>=0){l('策略3:找到 '+all3[si].tagName);fc(all3[si]);if(SEL>0)break;}}");
         sb.append("}");
         sb.append("}"); // end if D.body
 
-        // === 策略4：MutationObserver 监听 10秒（应对动态加载页面）===
-        sb.append("if(SEL===0&&window.MutationObserver){l('策略4:启动 MutationObserver');try{var obs=new MutationObserver(function(){if(SEL>0){obs.disconnect();return;}var ns=D.body.querySelectorAll('label,div,span,li,input,button');for(var oi=0;oi<ns.length;oi++){var t4='';try{t4=(ns[oi].innerText||ns[oi].textContent||'').toString();}catch(e){}if(t4&&t4.indexOf('正确答案')>=0){fc(ns[oi]);if(SEL>0){obs.disconnect();}}}});obs.observe(D.body||D.documentElement,{childList:true,subtree:true,characterData:true});setTimeout(function(){try{obs.disconnect();}catch(e){}},10000);}catch(e){l('策略4失败: '+e.message);}}");
+        // === 策略4：MutationObserver 监听 10秒 ===
+        sb.append("if(SEL===0&&window.MutationObserver){l('策略4:观察DOM');try{var obs=new MutationObserver(function(){if(SEL>0){obs.disconnect();return;}var ns=D.body.querySelectorAll('label,div,span,li,input,button');for(var oi=0;oi<ns.length;oi++){var t4='';try{t4=(ns[oi].innerText||ns[oi].textContent||'').toString();}catch(e){}if(t4&&t4.indexOf('正确答案')>=0){fc(ns[oi]);if(SEL>0){obs.disconnect();}}}});obs.observe(D.body||D.documentElement,{childList:true,subtree:true,characterData:true});setTimeout(function(){try{obs.disconnect();}catch(e){}},10000);}catch(e){l('策略4失败:'+e.message);}}");
 
-        sb.append("l('v6 done. SEL='+SEL);");
-        sb.append("}catch(e){try{console.log('[答案模块] '+TAG+' TOPERR:'+e.message);}catch(e2){}}");
-        // 返回执行摘要字符串（evaluateJavascript 的回调中可以捕获）
-        sb.append("'[答案模块] '+TAG+' JS执行摘要: selected='+SEL+' log='+LOG.join('|')");
+        sb.append("l('v7 done SEL='+SEL+' FOUND='+FOUND);");
+        sb.append("}catch(e){try{console.log('[答案模块]'+TAG+' TOPERR:'+e.message);}catch(e2){}try{document.title='[ERR]'+TAG+':'+e.message;}catch(e2){}}");
+
+        // 返回给 evaluateJavascript 的 ValueCallback（关键：TAG + SEL + FOUND）
+        sb.append("'[答案模块] '+TAG+' JS结果:SEL='+SEL+' FOUND='+FOUND+' LOG='+LOG.join('||')");
         return sb.toString();
     }
 
