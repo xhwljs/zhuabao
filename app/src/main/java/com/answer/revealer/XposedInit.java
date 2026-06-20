@@ -1160,7 +1160,7 @@ public class XposedInit implements IXposedHookLoadPackage {
     }
 
     // ============ Toast ============
-    private void showToastSafe(final String message) {
+    private static void showToastSafe(final String message) {
         new Handler(Looper.getMainLooper()).post(new Runnable() {
             @Override
             public void run() {
