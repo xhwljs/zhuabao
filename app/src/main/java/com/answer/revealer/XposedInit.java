@@ -1066,9 +1066,9 @@ public class XposedInit implements IXposedHookLoadPackage {
 
         // === dc(el)：终极点击函数（找到答案后高亮并点击）===
         sb.append("function dc(el){if(SEL>0||!el)return;SEL++;");
-        sb.append("FOUND='"+TAG+" tag='+el.tagName+' cls='+el.className+' txt='+(el.innerText||el.value||'').toString().substring(0,30);");
+        sb.append("FOUND='"+TAG+" tag='"+el.tagName+" cls='"+el.className+" txt='"+String((el.innerText||el.value||'').toString().substring(0,30))+"';");
         sb.append("try{console.log('[答案模块]'+TAG+' ★点击成功! '+FOUND);}catch(e){}");
-        sb.append("try{document.title='[A]'+TAG+':'+FOUND.substring(0,30);}catch(e){}");
+        sb.append("try{var ft=(el.innerText||el.value||'').toString().substring(0,30);document.title='[A]'+TAG+':'+ft;}catch(e){}");
         sb.append("try{el.checked=true;el.setAttribute('checked','checked');el.setAttribute('aria-checked','true');}catch(e){}");
         sb.append("try{if(el.focus)el.focus();}catch(e){}");
         sb.append("try{if(el.click)el.click();}catch(e){}");
@@ -1076,6 +1076,7 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("try{var evs=['click','mousedown','mouseup','change','input','touchstart','touchend','tap'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi].indexOf('touch')>=0){evt=document.createEvent('TouchEvent');try{evt.initEvent(evs[vi],true,true);}catch(e){continue;}}else if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=document.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
         sb.append("try{el.style.backgroundColor='#4CAF50';el.style.color='#ffffff';}catch(e){}");
         sb.append("l('DC:done SEL='+SEL);}");
+        sb.append(""); // end dc
 
         // === fc(el)：从元素向上找可点击的元素 ===
         sb.append("function fc(el){if(SEL>0)return;l('FC:从'+el.tagName+' 查找');");
