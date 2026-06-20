@@ -50,6 +50,7 @@ public class StatsProvider extends ContentProvider {
     public static final String KEY_MODULE_ACTIVE = "module_active_v1";
     public static final String KEY_DETECTED_CLIENTS = "detected_clients";
     public static final String KEY_PKG_HOOKED = "package_hooked";
+    public static final String KEY_AUTO_SELECT = "auto_select_enabled";
 
     private static final String[] ALL_KEYS = {
             KEY_REQUEST_COUNT,
@@ -57,7 +58,8 @@ public class StatsProvider extends ContentProvider {
             KEY_LAST_TIME,
             KEY_MODULE_ACTIVE,
             KEY_DETECTED_CLIENTS,
-            KEY_PKG_HOOKED
+            KEY_PKG_HOOKED,
+            KEY_AUTO_SELECT
     };
 
     // 目标应用包名 - 用于 fallback 读取其 SP
@@ -153,6 +155,7 @@ public class StatsProvider extends ContentProvider {
                         if (clients != null && !clients.isEmpty()) {
                             editor.putString(KEY_DETECTED_CLIENTS, clients);
                         }
+                        editor.putBoolean(KEY_AUTO_SELECT, targetSp.getBoolean(KEY_AUTO_SELECT, false));
                         editor.apply();
                         Log.d(TAG, "从目标应用 SP 同步数据到模块 SP: request_count=" + requestCount);
                     }
@@ -166,7 +169,7 @@ public class StatsProvider extends ContentProvider {
                 if (KEY_DETECTED_CLIENTS.equals(key) || KEY_PKG_HOOKED.equals(key)) {
                     String v = sp.getString(key, "");
                     cursor.newRow().add(key).add((long) (v == null || v.isEmpty() ? 0 : v.split("\n").length)).add(v == null ? "" : v);
-                } else if (KEY_MODULE_ACTIVE.equals(key)) {
+                } else if (KEY_MODULE_ACTIVE.equals(key) || KEY_AUTO_SELECT.equals(key)) {
                     long v = sp.getBoolean(key, false) ? 1L : 0L;
                     cursor.newRow().add(key).add(v).add(String.valueOf(v));
                 } else {

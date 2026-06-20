@@ -43,6 +43,10 @@ public class MainActivity extends Activity {
     private static final Uri URI_QUERY = Uri.parse("content://com.answer.revealer.stats/query");
     private static final Uri URI_REQUESTS = Uri.parse("content://com.answer.revealer.stats/requests");
     private static final Uri URI_CLEAR = Uri.parse("content://com.answer.revealer.stats/clear");
+    private static final Uri URI_UPDATE = Uri.parse("content://com.answer.revealer.stats/update");
+
+    // 配置项 key
+    private static final String KEY_AUTO_SELECT = "auto_select_enabled";
 
     // 颜色配置（Material Design 风格）
     private static final int COLOR_PRIMARY = 0xFF2196F3;
@@ -107,6 +111,8 @@ public class MainActivity extends Activity {
         long lastHookTime = -1;
         String detectedClients = "";
         List<RequestItem> requests = new ArrayList<>();
+        boolean autoSelectEnabled = false;
+        boolean autoSelectLoaded = false;
     }
 
     private static class RequestItem {
@@ -140,6 +146,10 @@ public class MainActivity extends Activity {
                         data.moduleActive = value > 0 || "true".equalsIgnoreCase(valueStr);
                     else if ("detected_clients".equals(key))
                         data.detectedClients = valueStr != null ? valueStr : "";
+                    else if ("auto_select_enabled".equals(key)) {
+                        data.autoSelectEnabled = value > 0 || "1".equals(valueStr) || "true".equalsIgnoreCase(valueStr);
+                        data.autoSelectLoaded = true;
+                    }
                 } while (cursor.moveToNext());
             }
         } catch (Throwable ignored) {
@@ -228,6 +238,8 @@ public class MainActivity extends Activity {
                 data.targetHitCount = selfSp.getInt("target_hit_count", -1);
             if (data.lastHookTime < 0)
                 data.lastHookTime = selfSp.getLong("last_hook_time", -1);
+            if (!data.autoSelectLoaded)
+                data.autoSelectEnabled = selfSp.getBoolean("auto_select_enabled", false);
         } catch (Throwable ignored) {}
 
         // 5. 通过 Xposed Hook 判断是否激活
@@ -261,6 +273,9 @@ public class MainActivity extends Activity {
 
         // 统计数字
         addStatsCard(root, mData);
+
+        // 功能设置
+        addFeatureSettingsCard(root, mData);
 
         // 目标应用信息
         addTargetInfoCard(root);
@@ -548,6 +563,120 @@ public class MainActivity extends Activity {
         return row;
     }
 
+    // ============ 功能设置卡 ============
+    private void addFeatureSettingsCard(LinearLayout root, StatsData data) {
+        LinearLayout card = createCard();
+        card.addView(createColorStrip(COLOR_PRIMARY));
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(12), dp(16), dp(16));
+
+        TextView title = new TextView(this);
+        title.setText("功能设置");
+        title.setTextSize(14);
+        title.setTextColor(COLOR_PRIMARY_DARK);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        content.addView(title);
+
+        // 当前开关状态
+        final boolean[] currentState = {data != null && data.autoSelectEnabled};
+
+        // 开关行
+        final LinearLayout switchRow = new LinearLayout(this);
+        switchRow.setOrientation(LinearLayout.HORIZONTAL);
+        switchRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        GradientDrawable switchBg = new GradientDrawable();
+        switchBg.setColor(0xFFFAFBFC);
+        switchBg.setCornerRadius(dp(10));
+        switchBg.setStroke(dp(1), 0xFFE0E4EC);
+        switchRow.setBackground(switchBg);
+        switchRow.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams srlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        srlp.topMargin = dp(10);
+        switchRow.setLayoutParams(srlp);
+
+        // 左侧：标签 + 描述
+        LinearLayout leftArea = new LinearLayout(this);
+        leftArea.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams lpLeft = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        leftArea.setLayoutParams(lpLeft);
+
+        TextView labelTv = new TextView(this);
+        labelTv.setText("自动选中正确答案");
+        labelTv.setTextSize(14);
+        labelTv.setTextColor(COLOR_TEXT_PRIMARY);
+        labelTv.setTypeface(null, android.graphics.Typeface.BOLD);
+        leftArea.addView(labelTv);
+
+        TextView descTv = new TextView(this);
+        descTv.setText("进入答题页后，自动识别并点击标记了正确答案的选项");
+        descTv.setTextSize(11);
+        descTv.setTextColor(COLOR_TEXT_SECONDARY);
+        LinearLayout.LayoutParams lpDesc = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lpDesc.topMargin = dp(2);
+        leftArea.addView(descTv, lpDesc);
+
+        switchRow.addView(leftArea);
+
+        // 右侧：状态显示（可点击切换）
+        final TextView stateTv = new TextView(this);
+        stateTv.setTextSize(13);
+        stateTv.setTypeface(null, android.graphics.Typeface.BOLD);
+        stateTv.setGravity(Gravity.CENTER);
+        stateTv.setPadding(dp(12), dp(6), dp(12), dp(6));
+        final GradientDrawable stateBg = new GradientDrawable();
+        stateBg.setCornerRadius(dp(100));
+        stateTv.setBackground(stateBg);
+        updateSwitchState(stateTv, stateBg, currentState[0]);
+        switchRow.addView(stateTv);
+
+        // 点击切换
+        switchRow.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                currentState[0] = !currentState[0];
+                updateSwitchState(stateTv, stateBg, currentState[0]);
+                try {
+                    ContentValues values = new ContentValues();
+                    values.put(KEY_AUTO_SELECT, currentState[0]);
+                    getContentResolver().update(URI_UPDATE, values, null, null);
+                    // 同时写入本地 SP 兜底
+                    SharedPreferences sp = getSharedPreferences("module_stats", MODE_PRIVATE);
+                    sp.edit().putBoolean(KEY_AUTO_SELECT, currentState[0]).apply();
+                    Toast.makeText(MainActivity.this,
+                            currentState[0] ? "已开启自动选中" : "已关闭自动选中",
+                            Toast.LENGTH_SHORT).show();
+                } catch (Throwable t) {
+                    Toast.makeText(MainActivity.this, "保存失败: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                    // 回滚显示
+                    currentState[0] = !currentState[0];
+                    updateSwitchState(stateTv, stateBg, currentState[0]);
+                }
+            }
+        });
+
+        content.addView(switchRow);
+
+        card.addView(content);
+        root.addView(card, cardParams());
+    }
+
+    private void updateSwitchState(TextView stateTv, GradientDrawable bg, boolean on) {
+        if (on) {
+            stateTv.setText("已开启");
+            stateTv.setTextColor(0xFFFFFFFF);
+            bg.setColor(COLOR_ACCENT);
+        } else {
+            stateTv.setText("已关闭");
+            stateTv.setTextColor(0xFFFFFFFF);
+            bg.setColor(0xFF90A4AE);
+        }
+    }
 
 
     // ============ 目标应用信息卡 ============

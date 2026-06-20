@@ -7,6 +7,8 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -46,6 +48,12 @@ public class XposedInit implements IXposedHookLoadPackage {
     // ContentProvider URI
     private static final Uri PROVIDER_URI = Uri.parse("content://com.answer.revealer.stats/update");
     private static final Uri PROVIDER_REQUEST_URI = Uri.parse("content://com.answer.revealer.stats/request");
+    private static final Uri PROVIDER_QUERY_URI = Uri.parse("content://com.answer.revealer.stats/query");
+
+    // 配置
+    private static final String CONFIG_KEY_AUTO_SELECT = "auto_select_enabled";
+    private static final String CONFIG_SP_NAME = "answer_revealer_status";
+    private static final String ANSWER_MARKER = "正确答案";
 
     // HTTP 客户端类扫描列表
     private static final String[] HTTP_CLIENT_CLASS_NAMES = {
@@ -145,6 +153,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                 public void run() {
                     try {
                         setupNetworkHooks(cl);
+                        setupAutoSelectHooks(cl);
                         List<String> clients = scanHttpClients(cl);
 
                         // 写入 ContentProvider（不再写 hook 安装数量
@@ -634,6 +643,195 @@ public class XposedInit implements IXposedHookLoadPackage {
             }
         } catch (Throwable ignored) {}
         return result;
+    }
+
+    // ============ 自动选中答案：读取开关状态 ============
+    private static boolean readAutoSelectEnabled() {
+        try {
+            Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
+            if (ctx == null) return false;
+
+            // 1. 先尝试 ContentProvider 查询
+            try {
+                Cursor cursor = ctx.getContentResolver().query(PROVIDER_QUERY_URI, null, null, null, null);
+                if (cursor != null && cursor.moveToFirst()) {
+                    do {
+                        try {
+                            String key = cursor.getString(cursor.getColumnIndex("key"));
+                            if (CONFIG_KEY_AUTO_SELECT.equals(key)) {
+                                long val = cursor.getLong(cursor.getColumnIndex("value"));
+                                String valueStr = cursor.getString(cursor.getColumnIndex("value_str"));
+                                cursor.close();
+                                return val > 0 || "1".equals(valueStr) || "true".equalsIgnoreCase(valueStr);
+                            }
+                        } catch (Throwable ignored) {}
+                    } while (cursor.moveToNext());
+                    cursor.close();
+                }
+            } catch (Throwable ignored) {}
+
+            // 2. Fallback：从目标应用 SP 读取
+            try {
+                android.content.SharedPreferences sp = ctx.getSharedPreferences(
+                        CONFIG_SP_NAME, Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
+                return sp.getBoolean(CONFIG_KEY_AUTO_SELECT, false);
+            } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    // ============ 安装自动选中 Hook（WebView + 原生UI） ============
+    private void setupAutoSelectHooks(final ClassLoader cl) {
+        // === 1. WebView: onPageFinished → 注入 JS 点击正确答案 ===
+        try {
+            XposedHelpers.findAndHookMethod("android.webkit.WebViewClient", cl, "onPageFinished",
+                    "android.webkit.WebView", String.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(final MethodHookParam param) {
+                            try {
+                                if (!readAutoSelectEnabled()) return;
+                                final Object webView = param.args[0];
+                                if (webView == null) return;
+
+                                // 注入 JS：遍历所有元素的文本，找到包含"正确答案"的元素，向上找可点击父级并点击
+                                final String js = "(function(){var m='正确答案';var a=document.querySelectorAll('*');for(var i=0;i<a.length;i++){var t=a[i].innerText||a[i].textContent||'';if(t.indexOf(m)>=0){var c=a[i];for(var j=0;j<6&&c;j++){if(typeof c.click==='function'){try{c.click();return;}catch(e){}}c=c.parentElement;}}}})();";
+
+                                // loadUrl 兼容所有 WebView 版本
+                                try {
+                                    XposedHelpers.callMethod(webView, "loadUrl", "javascript:" + js);
+                                } catch (Throwable ignored) {
+                                    // evaluateJavascript (API >= 19) 作为 fallback
+                                    try {
+                                        XposedHelpers.callMethod(webView, "evaluateJavascript", js, null);
+                                    } catch (Throwable ignored2) {}
+                                }
+                            } catch (Throwable ignored) {}
+                        }
+                    });
+            try {
+                XposedBridge.log("[答案模块] WebView onPageFinished hook 已安装");
+            } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            try { XposedBridge.log("[答案模块] WebView onPageFinished hook失败: " + t.getMessage()); } catch (Throwable ignored) {}
+        }
+
+        // === 2. Activity onResume → 扫描原生 UI 找正确答案并点击 ===
+        try {
+            XposedHelpers.findAndHookMethod("android.app.Activity", cl, "onResume",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(final MethodHookParam param) {
+                            try {
+                                if (!readAutoSelectEnabled()) return;
+                                final Object activityObj = param.thisObject;
+                                if (activityObj == null) return;
+
+                                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        try {
+                                            Object window = XposedHelpers.callMethod(activityObj, "getWindow");
+                                            if (window == null) return;
+                                            Object decorView = XposedHelpers.callMethod(window, "getDecorView");
+                                            if (decorView instanceof View) {
+                                                clickViewWithMarker((View) decorView);
+                                            }
+                                        } catch (Throwable ignored) {}
+                                    }
+                                }, 500);
+                            } catch (Throwable ignored) {}
+                        }
+                    });
+            try {
+                XposedBridge.log("[答案模块] Activity onResume hook 已安装");
+            } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            try { XposedBridge.log("[答案模块] Activity onResume hook失败: " + t.getMessage()); } catch (Throwable ignored) {}
+        }
+
+        // === 3. TextView setText → 检测动态内容包含"正确答案"时点击父容器 ===
+        try {
+            XposedHelpers.findAndHookMethod("android.widget.TextView", cl, "setText",
+                    CharSequence.class, android.widget.TextView.BufferType.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(final MethodHookParam param) {
+                            try {
+                                if (!readAutoSelectEnabled()) return;
+                                CharSequence text = (CharSequence) param.args[0];
+                                if (text == null || !text.toString().contains(ANSWER_MARKER)) return;
+
+                                final Object tvObj = param.thisObject;
+                                if (!(tvObj instanceof View)) return;
+
+                                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        try {
+                                            View cur = (View) tvObj;
+                                            for (int i = 0; i < 6; i++) {
+                                                if (cur == null) break;
+                                                if (cur.isClickable() && cur.isEnabled()) {
+                                                    cur.performClick();
+                                                    return;
+                                                }
+                                                Object parent = cur.getParent();
+                                                if (parent instanceof View) {
+                                                    cur = (View) parent;
+                                                } else {
+                                                    break;
+                                                }
+                                            }
+                                        } catch (Throwable ignored) {}
+                                    }
+                                }, 300);
+                            } catch (Throwable ignored) {}
+                        }
+                    });
+            try {
+                XposedBridge.log("[答案模块] TextView setText hook 已安装");
+            } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            try { XposedBridge.log("[答案模块] TextView setText hook失败: " + t.getMessage()); } catch (Throwable ignored) {}
+        }
+    }
+
+    // ============ 递归扫描视图树，点击含"正确答案"标记的元素 ============
+    private static void clickViewWithMarker(View view) {
+        if (view == null) return;
+        try {
+            // 检查当前 view 是否 TextView，文本是否包含标记
+            if (view instanceof TextView) {
+                TextView tv = (TextView) view;
+                CharSequence text = tv.getText();
+                if (text != null && text.toString().contains(ANSWER_MARKER)) {
+                    // 向上找可点击的父元素
+                    View cur = tv;
+                    for (int i = 0; i < 6; i++) {
+                        if (cur == null) break;
+                        if (cur.isClickable() && cur.isEnabled()) {
+                            cur.performClick();
+                            return;
+                        }
+                        Object parent = cur.getParent();
+                        if (parent instanceof View) {
+                            cur = (View) parent;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            // 递归遍历子元素
+            if (view instanceof ViewGroup) {
+                ViewGroup vg = (ViewGroup) view;
+                for (int i = 0; i < vg.getChildCount(); i++) {
+                    View child = vg.getChildAt(i);
+                    clickViewWithMarker(child);
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     // ============ 写入 ContentProvider ============
