@@ -176,14 +176,8 @@ public class XposedInit implements IXposedHookLoadPackage {
 
                         // Toast 提示
                         showToastSafe("✓ 答案模块已加载");
-
-                        try {
-                            XposedBridge.log("[答案模块] Hook 安装完成");
-                        } catch (Throwable ignored) {}
                     } catch (Throwable t) {
-                        try {
-                            XposedBridge.log("[答案模块] 初始化错误: " + t.getMessage());
-                        } catch (Throwable ignored) {}
+                        // 初始化错误（已清除日志）
                     }
                 }
             }).start();
@@ -271,7 +265,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 }
                                 param.setResult(new ByteArrayInputStream(modified.getBytes(StandardCharsets.UTF_8)));
                             } catch (Throwable t) {
-                                try { XposedBridge.log("[答案模块] HttpURLConnection 处理异常: " + t.getMessage()); } catch (Throwable ignored2) {}
+                                // HttpURLConnection 处理异常（已清除日志）
                             }
                         }
                     }
@@ -331,7 +325,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     responseBytes = readAll(is);
                                     if (is != null) is.close();
                                 } catch (Throwable t) {
-                                    try { XposedBridge.log("[答案模块] WebView 请求失败: " + t.getMessage()); } catch (Throwable ignored2) {}
+                                    // WebView 请求失败（已清除日志）
                                 } finally {
                                     if (conn != null) try { conn.disconnect(); } catch (Throwable ignored) {}
                                 }
@@ -360,11 +354,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 // === 只做 JS 注入 —— 3 次延迟，完全移除 Java 层触摸 ===
                                 final Object webViewObj = param.args[0];
                                 if (webViewObj != null) {
-                                    try {
-                                        XposedBridge.log("[答案模块] WebView 拦截 getQuestion，answerText="
-                                                + (sCorrectAnswerText != null ? sCorrectAnswerText.substring(0, Math.min(30, sCorrectAnswerText.length())) : "null"));
-                                    } catch (Throwable ignored) {}
-
                                     // 2500ms / 3500ms / 4500ms 三次 JS 注入
                                     long[] delays = {2500, 3500, 4500};
                                     for (long delay : delays) {
@@ -377,13 +366,13 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     }
                                 }
                             } catch (Throwable t) {
-                                try { XposedBridge.log("[答案模块] WebView shouldInterceptRequest 异常: " + t.getMessage()); } catch (Throwable ignored2) {}
+                                // WebView shouldInterceptRequest 异常（已清除日志）
                             }
                         }
                     }
             );
         } catch (Throwable ignored) {
-            try { XposedBridge.log("[答案模块] WebView shouldInterceptRequest hook 失败: " + ignored.getMessage()); } catch (Throwable ignored2) {}
+            // WebView shouldInterceptRequest hook 失败（已清除日志）
         }
 
         // === 4. 旧版 WebView shouldInterceptRequest(WebView, String) ===
@@ -416,7 +405,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     responseBytes = readAll(is);
                                     if (is != null) is.close();
                                 } catch (Throwable t) {
-                                    try { XposedBridge.log("[答案模块] WebView旧版 请求失败: " + t.getMessage()); } catch (Throwable ignored2) {}
+                                    // WebView旧版 请求失败（已清除日志）
                                 } finally {
                                     if (conn != null) try { conn.disconnect(); } catch (Throwable ignored) {}
                                 }
@@ -436,7 +425,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 try { wresp.setStatusCodeAndReasonPhrase(statusCode, "OK"); } catch (Throwable ignored) {}
                                 param.setResult(wresp);
                             } catch (Throwable t) {
-                                try { XposedBridge.log("[答案模块] WebView旧版 异常: " + t.getMessage()); } catch (Throwable ignored2) {}
+                                // WebView旧版 异常（已清除日志）
                             }
                         }
                     }
@@ -476,7 +465,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     responseBytes = readAll(is);
                                     if (is != null) is.close();
                                 } catch (Throwable t) {
-                                    try { XposedBridge.log("[答案模块] X5 请求失败: " + t.getMessage()); } catch (Throwable ignored2) {}
+                                    // X5 请求失败（已清除日志）
                                 } finally {
                                     if (conn != null) try { conn.disconnect(); } catch (Throwable ignored) {}
                                 }
@@ -506,7 +495,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 try { wresp.setStatusCodeAndReasonPhrase(statusCode, "OK"); } catch (Throwable ignored) {}
                                 param.setResult(wresp);
                             } catch (Throwable t) {
-                                try { XposedBridge.log("[答案模块] X5 异常: " + t.getMessage()); } catch (Throwable ignored2) {}
+                                // X5 异常（已清除日志）
                             }
                         }
                     }
@@ -539,7 +528,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                 }
             }
         } catch (Throwable t) {
-            try { XposedBridge.log("[答案模块] OkHttp处理异常: " + t.getMessage()); } catch (Throwable ignored2) {}
+            // OkHttp处理异常（已清除日志）
         }
     }
 
@@ -799,10 +788,8 @@ public class XposedInit implements IXposedHookLoadPackage {
                             try {
                                 Object msg = param.args[0];
                                 if (msg == null) return;
-                                String text = (String) XposedHelpers.callMethod(msg, "message");
-                                if (text != null && text.contains("[ANSWER]")) {
-                                    try { XposedBridge.log("[答案模块] " + text); } catch (Throwable ignored) {}
-                                }
+                                XposedHelpers.callMethod(msg, "message");
+                                // 已清除日志输出
                             } catch (Throwable ignored) {}
                         }
                     });
@@ -816,10 +803,9 @@ public class XposedInit implements IXposedHookLoadPackage {
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) {
                             try {
-                                String text = (String) param.args[0];
-                                if (text != null && text.contains("[ANSWER]")) {
-                                    try { XposedBridge.log("[答案模块] " + text); } catch (Throwable ignored) {}
-                                }
+                                Object arg = param.args[0];
+                                if (arg != null) arg.toString();
+                                // 已清除日志输出
                             } catch (Throwable ignored) {}
                         }
                     });
@@ -833,11 +819,8 @@ public class XposedInit implements IXposedHookLoadPackage {
                         protected void afterHookedMethod(MethodHookParam param) {
                             try {
                                 for (Object arg : param.args) {
-                                    if (arg == null) continue;
-                                    String t = arg.toString();
-                                    if (t != null && t.contains("[ANSWER]")) {
-                                        try { XposedBridge.log("[答案模块] " + t); } catch (Throwable ignored) {}
-                                    }
+                                    if (arg != null) arg.toString();
+                                    // 已清除日志输出
                                 }
                             } catch (Throwable ignored) {}
                         }
@@ -1000,14 +983,8 @@ public class XposedInit implements IXposedHookLoadPackage {
             String safeTag = escapeJsString(sourceTag);
 
             final String js = buildAutoClickJS2(safeA, safeM, safeTag);
-            final String shortAnswer = answerText.substring(0, Math.min(20, answerText.length()));
 
-            // === 日志：注入前 ===
-            try {
-                XposedBridge.log("[答案模块] " + sourceTag + " -> 注入JS(答案=" + shortAnswer + " 长度=" + js.length() + ")");
-            } catch (Throwable ignored) {}
-
-            // === 构造 ValueCallback 来捕获 evaluateJavascript 的返回值（不过滤，所有内容都记）===
+            // === 构造 ValueCallback 来捕获 evaluateJavascript 的返回值 ===
             Object callback = null;
             try {
                 callback = java.lang.reflect.Proxy.newProxyInstance(
@@ -1017,23 +994,18 @@ public class XposedInit implements IXposedHookLoadPackage {
                             @Override
                             public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] args) {
                                 try {
-                                    // 记录所有返回值，不过滤
                                     Object val = args != null && args.length > 0 ? args[0] : null;
                                     String valStr = val == null ? "null" : val.toString();
-                                    try {
-                                        XposedBridge.log("[答案模块] " + sourceTag + " -> JS返回值=" + valStr);
-                                    } catch (Throwable ignored2) {}
                                     // 如果 JS 返回值中显示成功选中，立即标记
                                     if (valStr.contains("SUCCESS") || valStr.contains("SEL=1")) {
                                         sAlreadyAutoSelected.set(true);
-                                        try { XposedBridge.log("[答案模块] " + sourceTag + " -> ★ 已自动选中答案！"); } catch (Throwable ignored2) {}
                                     }
                                 } catch (Throwable ignored) {}
                                 return null;
                             }
                         });
             } catch (Throwable t) {
-                try { XposedBridge.log("[答案模块] " + sourceTag + " -> ValueCallback创建失败: " + t.getMessage()); } catch (Throwable ignored) {}
+                // ValueCallback 创建失败（已清除日志）
             }
 
             // === 方式1：evaluateJavascript + ValueCallback ===
@@ -1041,32 +1013,21 @@ public class XposedInit implements IXposedHookLoadPackage {
             try {
                 XposedHelpers.callMethod(webViewObj, "evaluateJavascript", js, callback);
                 injected = true;
-                try {
-                    XposedBridge.log("[答案模块] " + sourceTag + " -> evaluateJavascript已调用(ValueCallback=" + (callback != null) + ")");
-                } catch (Throwable ignored) {}
             } catch (Throwable te) {
-                try { XposedBridge.log("[答案模块] " + sourceTag + " -> evaluateJavascript异常: " + te.getMessage()); } catch (Throwable ignored) {}
+                // evaluateJavascript 异常（已清除日志）
             }
 
-            // === 方式2：loadUrl("javascript:") 兜底（没有返回值机制，依赖title变化）===
+            // === 方式2：loadUrl("javascript:") 兜底 ===
             if (!injected) {
                 try {
                     XposedHelpers.callMethod(webViewObj, "loadUrl", "javascript:" + js);
                     injected = true;
-                    try { XposedBridge.log("[答案模块] " + sourceTag + " -> loadUrl已调用"); } catch (Throwable ignored) {}
                 } catch (Throwable te) {
-                    try { XposedBridge.log("[答案模块] " + sourceTag + " -> loadUrl异常: " + te.getMessage()); } catch (Throwable ignored) {}
+                    // loadUrl 异常（已清除日志）
                 }
             }
-
-            // === 记录：JS 已被注入（但执行结果要看 ValueCallback 或 title 变化）===
-            if (injected) {
-                try { XposedBridge.log("[答案模块] " + sourceTag + " -> JS已注入，等待执行结果"); } catch (Throwable ignored) {}
-            } else {
-                try { XposedBridge.log("[答案模块] " + sourceTag + " -> 所有JS注入方式均失败"); } catch (Throwable ignored) {}
-            }
         } catch (Throwable t) {
-            try { XposedBridge.log("[答案模块] " + sourceTag + " -> 注入顶级异常: " + t.getMessage()); } catch (Throwable ignored2) {}
+            // 注入顶级异常（已清除日志）
         }
     }
 
@@ -1115,8 +1076,8 @@ public class XposedInit implements IXposedHookLoadPackage {
         // SEL_SET: 已点击元素的集合，用于去重（避免多策略重复点击同一元素）
         sb.append("var SEL_SET=[];");
 
-        // l(msg)：三路日志（console.log + document.title + 内存LOG数组）
-        sb.append("function l(m){try{console.log('[ANSWER]'+TAG+' '+m);}catch(e){}try{document.title=TAG+':'+String(m).substring(0,40);}catch(e){}}");
+        // l(msg)：空函数（已清除日志输出）
+        sb.append("function l(m){}");
 
         // dc(el)：终极点击。分类型处理：
         //   - INPUT: 直接 checked=true + change 事件（不再 click，避免 toggle 回 false）
@@ -1211,14 +1172,9 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static boolean performEnhancedClick(View view, String source) {
         if (view == null) return false;
         try {
-            try {
-                XposedBridge.log("[答案模块] [" + source + "] 尝试点击: " + getViewInfo(view));
-            } catch (Throwable ignored) {}
-
             // 方式1: performClick
             try {
                 if (view.performClick()) {
-                    try { XposedBridge.log("[答案模块] [" + source + "] 点击成功: performClick"); } catch (Throwable ignored) {}
                     showToastSafe("✓ [" + source + "] 自动选中");
                     return true;
                 }
@@ -1235,7 +1191,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                         (float) view.getWidth() / 2, (float) view.getHeight() / 2, 0);
                 XposedHelpers.callMethod(view, "dispatchTouchEvent", downEvent);
                 XposedHelpers.callMethod(view, "dispatchTouchEvent", upEvent);
-                try { XposedBridge.log("[答案模块] [" + source + "] 点击成功: dispatchTouchEvent"); } catch (Throwable ignored) {}
                 showToastSafe("✓ [" + source + "] 自动选中");
                 return true;
             } catch (Throwable ignored) {}

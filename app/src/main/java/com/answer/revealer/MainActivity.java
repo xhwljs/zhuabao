@@ -572,33 +572,80 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(16), dp(12), dp(16), dp(16));
 
+        // 标题行
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        content.addView(titleRow);
+
         TextView title = new TextView(this);
-        title.setText("功能设置");
-        title.setTextSize(14);
+        title.setText("⚙️ 功能设置");
+        title.setTextSize(16);
         title.setTextColor(COLOR_PRIMARY_DARK);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
-        content.addView(title);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        title.setLayoutParams(titleLp);
+        titleRow.addView(title);
+
+        // 模块版本标签
+        TextView versionTag = new TextView(this);
+        versionTag.setText("v1.0");
+        versionTag.setTextSize(11);
+        versionTag.setTextColor(0xFF90A4AE);
+        versionTag.setBackground(makeTagBackground(0xFFF0F3F7));
+        versionTag.setPadding(dp(8), dp(3), dp(8), dp(3));
+        versionTag.setGravity(Gravity.CENTER);
+        titleRow.addView(versionTag);
+
+        // 分隔线
+        View divider1 = new View(this);
+        divider1.setBackgroundColor(0xFFE8EAED);
+        LinearLayout.LayoutParams divLp1 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        divLp1.topMargin = dp(12);
+        content.addView(divider1, divLp1);
 
         // 当前开关状态
         final boolean[] currentState = {data != null && data.autoSelectEnabled};
 
-        // 开关行
+        // 主开关行
         final LinearLayout switchRow = new LinearLayout(this);
         switchRow.setOrientation(LinearLayout.HORIZONTAL);
         switchRow.setGravity(Gravity.CENTER_VERTICAL);
 
         GradientDrawable switchBg = new GradientDrawable();
         switchBg.setColor(0xFFFAFBFC);
-        switchBg.setCornerRadius(dp(10));
+        switchBg.setCornerRadius(dp(12));
         switchBg.setStroke(dp(1), 0xFFE0E4EC);
         switchRow.setBackground(switchBg);
-        switchRow.setPadding(dp(14), dp(12), dp(14), dp(12));
+        switchRow.setPadding(dp(16), dp(14), dp(16), dp(14));
         LinearLayout.LayoutParams srlp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        srlp.topMargin = dp(10);
+        srlp.topMargin = dp(12);
         switchRow.setLayoutParams(srlp);
 
-        // 左侧：标签 + 描述
+        // 左侧图标区
+        LinearLayout iconArea = new LinearLayout(this);
+        iconArea.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(44), dp(44));
+        iconLp.setMargins(0, 0, dp(12), 0);
+        iconArea.setLayoutParams(iconLp);
+
+        GradientDrawable iconBg = new GradientDrawable();
+        iconBg.setShape(GradientDrawable.OVAL);
+        iconBg.setColor(currentState[0] ? COLOR_ACCENT : 0xFFE0E0E0);
+        iconArea.setBackground(iconBg);
+
+        TextView icon = new TextView(this);
+        icon.setText("✓");
+        icon.setTextSize(20);
+        icon.setTextColor(0xFFFFFFFF);
+        icon.setGravity(Gravity.CENTER);
+        iconArea.addView(icon);
+        switchRow.addView(iconArea);
+
+        // 中间：标签 + 描述
         LinearLayout leftArea = new LinearLayout(this);
         leftArea.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams lpLeft = new LinearLayout.LayoutParams(
@@ -607,63 +654,154 @@ public class MainActivity extends Activity {
 
         TextView labelTv = new TextView(this);
         labelTv.setText("自动选中正确答案");
-        labelTv.setTextSize(14);
+        labelTv.setTextSize(15);
         labelTv.setTextColor(COLOR_TEXT_PRIMARY);
         labelTv.setTypeface(null, android.graphics.Typeface.BOLD);
         leftArea.addView(labelTv);
 
         TextView descTv = new TextView(this);
-        descTv.setText("进入答题页后，自动识别并点击标记了正确答案的选项");
-        descTv.setTextSize(11);
+        descTv.setText("自动识别并点击标记了正确答案的选项");
+        descTv.setTextSize(12);
         descTv.setTextColor(COLOR_TEXT_SECONDARY);
         LinearLayout.LayoutParams lpDesc = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lpDesc.topMargin = dp(2);
+        lpDesc.topMargin = dp(3);
         leftArea.addView(descTv, lpDesc);
 
         switchRow.addView(leftArea);
 
-        // 右侧：状态显示（可点击切换）
-        final TextView stateTv = new TextView(this);
-        stateTv.setTextSize(13);
-        stateTv.setTypeface(null, android.graphics.Typeface.BOLD);
-        stateTv.setGravity(Gravity.CENTER);
-        stateTv.setPadding(dp(12), dp(6), dp(12), dp(6));
-        final GradientDrawable stateBg = new GradientDrawable();
-        stateBg.setCornerRadius(dp(100));
-        stateTv.setBackground(stateBg);
-        updateSwitchState(stateTv, stateBg, currentState[0]);
-        switchRow.addView(stateTv);
+        // 右侧：开关按钮
+        final android.widget.Switch toggleSwitch = new android.widget.Switch(this);
+        toggleSwitch.setChecked(currentState[0]);
+        toggleSwitch.setTrackTintList(android.content.res.ColorStateList.valueOf(
+                currentState[0] ? COLOR_ACCENT : 0xFFE0E0E0));
+        toggleSwitch.setThumbTintList(android.content.res.ColorStateList.valueOf(
+                currentState[0] ? 0xFFFFFFFF : 0xFFBDBDBD));
+        LinearLayout.LayoutParams toggleLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        toggleLp.setMargins(dp(8), 0, 0, 0);
+        toggleSwitch.setLayoutParams(toggleLp);
+        // 防止 Switch 点击事件冒泡到父布局导致双重切换
+        toggleSwitch.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // Switch 已经切换了状态，这里只处理后续逻辑
+                // 不要调用 currentState[0] = !currentState[0]，因为 Switch 已经自己 toggle 了
+                try {
+                    ContentValues values = new ContentValues();
+                    values.put(KEY_AUTO_SELECT, toggleSwitch.isChecked());
+                    getContentResolver().update(URI_UPDATE, values, null, null);
+                    SharedPreferences sp = getSharedPreferences("module_stats", MODE_PRIVATE);
+                    sp.edit().putBoolean(KEY_AUTO_SELECT, toggleSwitch.isChecked()).apply();
+                    Toast.makeText(MainActivity.this,
+                            toggleSwitch.isChecked() ? "✓ 已开启自动选中" : "✗ 已关闭自动选中",
+                            Toast.LENGTH_SHORT).show();
+                } catch (Throwable t) {
+                    Toast.makeText(MainActivity.this, "保存失败: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                    toggleSwitch.setChecked(!toggleSwitch.isChecked());
+                }
+            }
+        });
+        switchRow.addView(toggleSwitch);
 
-        // 点击切换
+        // 点击切换（整个行，包括左侧图标和文字）
         switchRow.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 currentState[0] = !currentState[0];
-                updateSwitchState(stateTv, stateBg, currentState[0]);
+                toggleSwitch.setChecked(currentState[0]);
+                updateSwitchIcon(iconArea, icon, currentState[0]);
                 try {
                     ContentValues values = new ContentValues();
                     values.put(KEY_AUTO_SELECT, currentState[0]);
                     getContentResolver().update(URI_UPDATE, values, null, null);
-                    // 同时写入本地 SP 兜底
                     SharedPreferences sp = getSharedPreferences("module_stats", MODE_PRIVATE);
                     sp.edit().putBoolean(KEY_AUTO_SELECT, currentState[0]).apply();
                     Toast.makeText(MainActivity.this,
-                            currentState[0] ? "已开启自动选中" : "已关闭自动选中",
+                            currentState[0] ? "✓ 已开启自动选中" : "✗ 已关闭自动选中",
                             Toast.LENGTH_SHORT).show();
                 } catch (Throwable t) {
                     Toast.makeText(MainActivity.this, "保存失败: " + t.getMessage(), Toast.LENGTH_SHORT).show();
-                    // 回滚显示
                     currentState[0] = !currentState[0];
-                    updateSwitchState(stateTv, stateBg, currentState[0]);
+                    toggleSwitch.setChecked(currentState[0]);
+                    updateSwitchIcon(iconArea, icon, currentState[0]);
                 }
             }
         });
 
         content.addView(switchRow);
 
+        // 分隔线
+        View divider2 = new View(this);
+        divider2.setBackgroundColor(0xFFE8EAED);
+        LinearLayout.LayoutParams divLp2 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        divLp2.topMargin = dp(16);
+        content.addView(divider2, divLp2);
+
+        // 支持题型标签
+        TextView supportLabel = new TextView(this);
+        supportLabel.setText("支持的题型");
+        supportLabel.setTextSize(12);
+        supportLabel.setTextColor(COLOR_TEXT_SECONDARY);
+        LinearLayout.LayoutParams supportLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        supportLp.topMargin = dp(12);
+        supportLabel.setLayoutParams(supportLp);
+        content.addView(supportLabel);
+
+        // 题型标签行
+        LinearLayout tagsRow = new LinearLayout(this);
+        tagsRow.setOrientation(LinearLayout.HORIZONTAL);
+        tagsRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams tagsLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tagsLp.topMargin = dp(8);
+        tagsRow.setLayoutParams(tagsLp);
+
+        tagsRow.addView(makeTagChip("✓ 单选题", COLOR_ACCENT, 0xFFE8F5E9));
+        tagsRow.addView(makeTagChip("✓ 多选题", COLOR_PRIMARY, 0xFFE3F2FD));
+        tagsRow.addView(makeTagChip("✓ 判断题", COLOR_INFO, 0xFFE0F7FA));
+
+        content.addView(tagsRow);
+
         card.addView(content);
         root.addView(card, cardParams());
+    }
+
+    // ============ 辅助方法：创建标签背景 ============
+    private GradientDrawable makeTagBackground(int color) {
+        GradientDrawable gd = new GradientDrawable();
+        gd.setColor(color);
+        gd.setCornerRadius(dp(6));
+        return gd;
+    }
+
+    // ============ 辅助方法：创建标签 Chip ============
+    private View makeTagChip(String text, int textColor, int bgColor) {
+        TextView chip = new TextView(this);
+        chip.setText(text);
+        chip.setTextSize(12);
+        chip.setTextColor(textColor);
+        chip.setBackground(makeTagBackground(bgColor));
+        chip.setPadding(dp(10), dp(6), dp(10), dp(6));
+        LinearLayout.LayoutParams chipLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        chipLp.rightMargin = dp(8);
+        chip.setLayoutParams(chipLp);
+        return chip;
+    }
+
+    // ============ 辅助方法：更新开关图标 ============
+    private void updateSwitchIcon(LinearLayout iconArea, TextView icon, boolean on) {
+        GradientDrawable iconBg = (GradientDrawable) iconArea.getBackground();
+        if (on) {
+            iconBg.setColor(COLOR_ACCENT);
+            icon.setText("✓");
+        } else {
+            iconBg.setColor(0xFFE0E0E0);
+            icon.setText("✗");
+        }
     }
 
     private void updateSwitchState(TextView stateTv, GradientDrawable bg, boolean on) {
