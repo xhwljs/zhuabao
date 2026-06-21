@@ -565,128 +565,171 @@ public class MainActivity extends Activity {
 
     // ============ 功能设置卡 ============
     private void addFeatureSettingsCard(LinearLayout root, StatsData data) {
-        LinearLayout card = createCard();
-        card.addView(createColorStrip(COLOR_PRIMARY));
+        // 外层卡片 - 带阴影效果
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable cardGd = new GradientDrawable();
+        cardGd.setColor(COLOR_CARD);
+        cardGd.setCornerRadius(dp(16));
+        cardGd.setStroke(dp(1), 0xFFE8EAED);
+        card.setBackground(cardGd);
+        card.setElevation(dp(3));
+
+        // 顶部渐变色条
+        View topStrip = new View(this);
+        GradientDrawable stripGd = new GradientDrawable();
+        stripGd.setColors(new int[]{0xFF2196F3, 0xFF1976D2});
+        stripGd.setCornerRadii(new float[]{dp(16), dp(16), 0, 0, 0, 0, dp(16), dp(16)});
+        topStrip.setBackground(stripGd);
+        LinearLayout.LayoutParams topStripLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(5));
+        card.addView(topStrip, topStripLp);
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(16), dp(12), dp(16), dp(16));
+        content.setPadding(dp(20), dp(16), dp(20), dp(20));
 
-        // 标题行
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        content.addView(titleRow);
+        // 标题区域 - 带有图标
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams headerLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        headerRow.setLayoutParams(headerLp);
 
-        TextView title = new TextView(this);
-        title.setText("⚙️ 功能设置");
-        title.setTextSize(16);
-        title.setTextColor(COLOR_PRIMARY_DARK);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        title.setLayoutParams(titleLp);
-        titleRow.addView(title);
+        // 设置图标背景
+        LinearLayout iconWrapper = new LinearLayout(this);
+        iconWrapper.setGravity(Gravity.CENTER);
+        GradientDrawable iconBg = new GradientDrawable();
+        iconBg.setShape(GradientDrawable.RECTANGLE);
+        iconBg.setCornerRadius(dp(10));
+        iconBg.setColor(0xFFE3F2FD);
+        iconWrapper.setBackground(iconBg);
+        LinearLayout.LayoutParams iconWp = new LinearLayout.LayoutParams(dp(40), dp(40));
+        iconWrapper.setLayoutParams(iconWp);
 
-        // 模块版本标签
-        TextView versionTag = new TextView(this);
-        versionTag.setText("v1.0");
-        versionTag.setTextSize(11);
-        versionTag.setTextColor(0xFF90A4AE);
-        versionTag.setBackground(makeTagBackground(0xFFF0F3F7));
-        versionTag.setPadding(dp(8), dp(3), dp(8), dp(3));
-        versionTag.setGravity(Gravity.CENTER);
-        titleRow.addView(versionTag);
+        TextView settingsIcon = new TextView(this);
+        settingsIcon.setText("⚙");
+        settingsIcon.setTextSize(20);
+        settingsIcon.setTextColor(COLOR_PRIMARY);
+        settingsIcon.setGravity(Gravity.CENTER);
+        iconWrapper.addView(settingsIcon);
+        headerRow.addView(iconWrapper);
+
+        // 标题文字
+        LinearLayout titleArea = new LinearLayout(this);
+        titleArea.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams titleAreaLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        titleAreaLp.leftMargin = dp(12);
+        titleArea.setLayoutParams(titleAreaLp);
+
+        TextView mainTitle = new TextView(this);
+        mainTitle.setText("自动答题设置");
+        mainTitle.setTextSize(17);
+        mainTitle.setTextColor(COLOR_TEXT_PRIMARY);
+        mainTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleArea.addView(mainTitle);
+
+        TextView subTitle = new TextView(this);
+        subTitle.setText("答案自动选中与标记");
+        subTitle.setTextSize(12);
+        subTitle.setTextColor(COLOR_TEXT_SECONDARY);
+        LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        subLp.topMargin = dp(2);
+        subTitle.setLayoutParams(subLp);
+        titleArea.addView(subTitle);
+        headerRow.addView(titleArea);
+
+        // 版本标签
+        TextView versionBadge = new TextView(this);
+        versionBadge.setText("v1.0");
+        versionBadge.setTextSize(10);
+        versionBadge.setTextColor(0xFF90A4AE);
+        versionBadge.setBackground(makeTagBackground(0xFFF5F7FA));
+        versionBadge.setPadding(dp(8), dp(4), dp(8), dp(4));
+        versionBadge.setGravity(Gravity.CENTER);
+        headerRow.addView(versionBadge);
+
+        content.addView(headerRow);
 
         // 分隔线
-        View divider1 = new View(this);
-        divider1.setBackgroundColor(0xFFE8EAED);
-        LinearLayout.LayoutParams divLp1 = new LinearLayout.LayoutParams(
+        View divider = new View(this);
+        divider.setBackgroundColor(0xFFEEEEEE);
+        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
-        divLp1.topMargin = dp(12);
-        content.addView(divider1, divLp1);
+        divLp.topMargin = dp(14);
+        divLp.bottomMargin = dp(14);
+        content.addView(divider, divLp);
 
         // 当前开关状态
         final boolean[] currentState = {data != null && data.autoSelectEnabled};
 
-        // 主开关行
-        final LinearLayout switchRow = new LinearLayout(this);
-        switchRow.setOrientation(LinearLayout.HORIZONTAL);
-        switchRow.setGravity(Gravity.CENTER_VERTICAL);
+        // 主开关卡片行
+        final LinearLayout switchCard = new LinearLayout(this);
+        switchCard.setOrientation(LinearLayout.HORIZONTAL);
+        switchCard.setGravity(Gravity.CENTER_VERTICAL);
+        switchCard.setBackground(makeSwitchCardBg(currentState[0]));
+        switchCard.setPadding(dp(14), dp(12), dp(14), dp(12));
 
-        GradientDrawable switchBg = new GradientDrawable();
-        switchBg.setColor(0xFFFAFBFC);
-        switchBg.setCornerRadius(dp(12));
-        switchBg.setStroke(dp(1), 0xFFE0E4EC);
-        switchRow.setBackground(switchBg);
-        switchRow.setPadding(dp(16), dp(14), dp(16), dp(14));
-        LinearLayout.LayoutParams srlp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        srlp.topMargin = dp(12);
-        switchRow.setLayoutParams(srlp);
+        // 左侧状态图标
+        final LinearLayout statusIconArea = new LinearLayout(this);
+        statusIconArea.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(dp(46), dp(46));
+        statusLp.rightMargin = dp(12);
+        statusIconArea.setLayoutParams(statusLp);
+        statusIconArea.setBackground(makeStatusIconBg(currentState[0]));
 
-        // 左侧图标区
-        LinearLayout iconArea = new LinearLayout(this);
-        iconArea.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(44), dp(44));
-        iconLp.setMargins(0, 0, dp(12), 0);
-        iconArea.setLayoutParams(iconLp);
+        final TextView statusIcon = new TextView(this);
+        statusIcon.setText(currentState[0] ? "✓" : "✗");
+        statusIcon.setTextSize(20);
+        statusIcon.setTextColor(0xFFFFFFFF);
+        statusIcon.setGravity(Gravity.CENTER);
+        statusIconArea.addView(statusIcon);
+        switchCard.addView(statusIconArea);
 
-        GradientDrawable iconBg = new GradientDrawable();
-        iconBg.setShape(GradientDrawable.OVAL);
-        iconBg.setColor(currentState[0] ? COLOR_ACCENT : 0xFFE0E0E0);
-        iconArea.setBackground(iconBg);
-
-        TextView icon = new TextView(this);
-        icon.setText("✓");
-        icon.setTextSize(20);
-        icon.setTextColor(0xFFFFFFFF);
-        icon.setGravity(Gravity.CENTER);
-        iconArea.addView(icon);
-        switchRow.addView(iconArea);
-
-        // 中间：标签 + 描述
-        LinearLayout leftArea = new LinearLayout(this);
-        leftArea.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams lpLeft = new LinearLayout.LayoutParams(
+        // 中间文字区域
+        LinearLayout switchTextArea = new LinearLayout(this);
+        switchTextArea.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams switchTextLp = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        leftArea.setLayoutParams(lpLeft);
+        switchTextArea.setLayoutParams(switchTextLp);
 
-        TextView labelTv = new TextView(this);
-        labelTv.setText("自动选中正确答案");
-        labelTv.setTextSize(15);
-        labelTv.setTextColor(COLOR_TEXT_PRIMARY);
-        labelTv.setTypeface(null, android.graphics.Typeface.BOLD);
-        leftArea.addView(labelTv);
+        TextView switchLabel = new TextView(this);
+        switchLabel.setText("自动选中答案");
+        switchLabel.setTextSize(15);
+        switchLabel.setTextColor(COLOR_TEXT_PRIMARY);
+        switchLabel.setTypeface(null, android.graphics.Typeface.BOLD);
+        switchTextArea.addView(switchLabel);
 
-        TextView descTv = new TextView(this);
-        descTv.setText("自动识别并点击标记了正确答案的选项");
-        descTv.setTextSize(12);
-        descTv.setTextColor(COLOR_TEXT_SECONDARY);
-        LinearLayout.LayoutParams lpDesc = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lpDesc.topMargin = dp(3);
-        leftArea.addView(descTv, lpDesc);
+        final TextView switchDesc = new TextView(this);
+        switchDesc.setText(currentState[0] ? "正在监听并自动选中正确答案" : "已暂停自动选中功能");
+        switchDesc.setTextSize(12);
+        switchDesc.setTextColor(currentState[0] ? COLOR_ACCENT : COLOR_TEXT_SECONDARY);
+        LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        descLp.topMargin = dp(2);
+        switchDesc.setLayoutParams(descLp);
+        switchTextArea.addView(switchDesc);
+        switchCard.addView(switchTextArea);
 
-        switchRow.addView(leftArea);
-
-        // 右侧：开关按钮
+        // 开关按钮
         final android.widget.Switch toggleSwitch = new android.widget.Switch(this);
         toggleSwitch.setChecked(currentState[0]);
         toggleSwitch.setTrackTintList(android.content.res.ColorStateList.valueOf(
-                currentState[0] ? COLOR_ACCENT : 0xFFE0E0E0));
+                currentState[0] ? 0xFF81C784 : 0xFFE0E0E0));
         toggleSwitch.setThumbTintList(android.content.res.ColorStateList.valueOf(
                 currentState[0] ? 0xFFFFFFFF : 0xFFBDBDBD));
         LinearLayout.LayoutParams toggleLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        toggleLp.setMargins(dp(8), 0, 0, 0);
+        toggleLp.leftMargin = dp(10);
         toggleSwitch.setLayoutParams(toggleLp);
-        // 防止 Switch 点击事件冒泡到父布局导致双重切换
+        switchCard.addView(toggleSwitch);
+
+        // Switch 点击事件
         toggleSwitch.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // Switch 已经切换了状态，这里只处理后续逻辑
-                // 不要调用 currentState[0] = !currentState[0]，因为 Switch 已经自己 toggle 了
                 try {
                     ContentValues values = new ContentValues();
                     values.put(KEY_AUTO_SELECT, toggleSwitch.isChecked());
@@ -702,15 +745,14 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        switchRow.addView(toggleSwitch);
 
-        // 点击切换（整个行，包括左侧图标和文字）
-        switchRow.setOnClickListener(new View.OnClickListener() {
+        // 整行点击事件
+        switchCard.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 currentState[0] = !currentState[0];
                 toggleSwitch.setChecked(currentState[0]);
-                updateSwitchIcon(iconArea, icon, currentState[0]);
+                updateSwitchCardUI(switchCard, statusIconArea, statusIcon, switchDesc, currentState[0]);
                 try {
                     ContentValues values = new ContentValues();
                     values.put(KEY_AUTO_SELECT, currentState[0]);
@@ -724,49 +766,127 @@ public class MainActivity extends Activity {
                     Toast.makeText(MainActivity.this, "保存失败: " + t.getMessage(), Toast.LENGTH_SHORT).show();
                     currentState[0] = !currentState[0];
                     toggleSwitch.setChecked(currentState[0]);
-                    updateSwitchIcon(iconArea, icon, currentState[0]);
+                    updateSwitchCardUI(switchCard, statusIconArea, statusIcon, switchDesc, currentState[0]);
                 }
             }
         });
 
-        content.addView(switchRow);
+        content.addView(switchCard);
 
-        // 分隔线
-        View divider2 = new View(this);
-        divider2.setBackgroundColor(0xFFE8EAED);
-        LinearLayout.LayoutParams divLp2 = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
-        divLp2.topMargin = dp(16);
-        content.addView(divider2, divLp2);
-
-        // 支持题型标签
-        TextView supportLabel = new TextView(this);
-        supportLabel.setText("支持的题型");
-        supportLabel.setTextSize(12);
-        supportLabel.setTextColor(COLOR_TEXT_SECONDARY);
-        LinearLayout.LayoutParams supportLp = new LinearLayout.LayoutParams(
+        // 支持题型区域
+        LinearLayout supportArea = new LinearLayout(this);
+        supportArea.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams supportAreaLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        supportLp.topMargin = dp(12);
-        supportLabel.setLayoutParams(supportLp);
-        content.addView(supportLabel);
+        supportAreaLp.topMargin = dp(16);
+        supportArea.setLayoutParams(supportAreaLp);
 
-        // 题型标签行
-        LinearLayout tagsRow = new LinearLayout(this);
-        tagsRow.setOrientation(LinearLayout.HORIZONTAL);
-        tagsRow.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams tagsLp = new LinearLayout.LayoutParams(
+        TextView supportTitle = new TextView(this);
+        supportTitle.setText("支持的题型");
+        supportTitle.setTextSize(12);
+        supportTitle.setTextColor(COLOR_TEXT_SECONDARY);
+        supportTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+        supportArea.addView(supportTitle);
+
+        // 题型网格
+        LinearLayout typesRow = new LinearLayout(this);
+        typesRow.setOrientation(LinearLayout.HORIZONTAL);
+        typesRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams typesRowLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        tagsLp.topMargin = dp(8);
-        tagsRow.setLayoutParams(tagsLp);
+        typesRowLp.topMargin = dp(10);
+        typesRow.setLayoutParams(typesRowLp);
 
-        tagsRow.addView(makeTagChip("✓ 单选题", COLOR_ACCENT, 0xFFE8F5E9));
-        tagsRow.addView(makeTagChip("✓ 多选题", COLOR_PRIMARY, 0xFFE3F2FD));
-        tagsRow.addView(makeTagChip("✓ 判断题", COLOR_INFO, 0xFFE0F7FA));
+        // 单选题卡片
+        LinearLayout typeSingle = makeTypeCard("单选题", "A B C D", COLOR_ACCENT, 0xFFE8F5E9);
+        LinearLayout.LayoutParams typeSingleLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        typeSingle.setLayoutParams(typeSingleLp);
+        typesRow.addView(typeSingle);
 
-        content.addView(tagsRow);
+        // 多选题卡片
+        LinearLayout typeMulti = makeTypeCard("多选题", "ABCDE", COLOR_PRIMARY, 0xFFE3F2FD);
+        LinearLayout.LayoutParams typeMultiLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        typeMultiLp.leftMargin = dp(8);
+        typeMulti.setLayoutParams(typeMultiLp);
+        typesRow.addView(typeMulti);
+
+        // 判断题卡片
+        LinearLayout typeJudge = makeTypeCard("判断题", "√ ×", COLOR_INFO, 0xFFE0F7FA);
+        LinearLayout.LayoutParams typeJudgeLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        typeJudgeLp.leftMargin = dp(8);
+        typeJudge.setLayoutParams(typeJudgeLp);
+        typesRow.addView(typeJudge);
+
+        supportArea.addView(typesRow);
+        content.addView(supportArea);
 
         card.addView(content);
         root.addView(card, cardParams());
+    }
+
+    // ============ 创建题型卡片 ============
+    private LinearLayout makeTypeCard(String title, String options, int textColor, int bgColor) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER);
+        card.setBackground(makeTypeCardBg(bgColor));
+        card.setPadding(dp(10), dp(10), dp(10), dp(10));
+
+        TextView titleTv = new TextView(this);
+        titleTv.setText(title);
+        titleTv.setTextSize(13);
+        titleTv.setTextColor(textColor);
+        titleTv.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleTv.setGravity(Gravity.CENTER);
+        card.addView(titleTv);
+
+        TextView optionsTv = new TextView(this);
+        optionsTv.setText(options);
+        optionsTv.setTextSize(11);
+        optionsTv.setTextColor(COLOR_TEXT_SECONDARY);
+        optionsTv.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams optLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        optLp.topMargin = dp(4);
+        optionsTv.setLayoutParams(optLp);
+        card.addView(optionsTv);
+
+        return card;
+    }
+
+    // ============ 题型卡片背景 ============
+    private GradientDrawable makeTypeCardBg(int bgColor) {
+        GradientDrawable gd = new GradientDrawable();
+        gd.setColor(bgColor);
+        gd.setCornerRadius(dp(10));
+        return gd;
+    }
+
+    // ============ 开关卡片背景 ============
+    private GradientDrawable makeSwitchCardBg(boolean isOn) {
+        GradientDrawable gd = new GradientDrawable();
+        gd.setColor(isOn ? 0xFFF8FFF8 : 0xFFFAFBFC);
+        gd.setCornerRadius(dp(12));
+        gd.setStroke(dp(1), isOn ? 0xFFA5D6A7 : 0xFFE0E0E0);
+        return gd;
+    }
+
+    // ============ 状态图标背景 ============
+    private GradientDrawable makeStatusIconBg(boolean isOn) {
+        GradientDrawable gd = new GradientDrawable();
+        gd.setShape(GradientDrawable.OVAL);
+        gd.setColor(isOn ? COLOR_ACCENT : 0xFFE0E0E0);
+        return gd;
+    }
+
+    // ============ 更新开关卡片UI ============
+    private void updateSwitchCardUI(LinearLayout switchCard, LinearLayout statusIconArea,
+                                    TextView statusIcon, TextView switchDesc, boolean isOn) {
+        switchCard.setBackground(makeSwitchCardBg(isOn));
+        statusIconArea.setBackground(makeStatusIconBg(isOn));
+        statusIcon.setText(isOn ? "✓" : "✗");
+        switchDesc.setText(isOn ? "正在监听并自动选中正确答案" : "已暂停自动选中功能");
+        switchDesc.setTextColor(isOn ? COLOR_ACCENT : COLOR_TEXT_SECONDARY);
     }
 
     // ============ 辅助方法：创建标签背景 ============
