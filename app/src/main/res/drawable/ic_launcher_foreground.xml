@@ -3,13 +3,59 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- 外层圆形背景：蓝色到绿色的渐变 -->
+    <path
+        android:fillColor="#FF1976D2"
+        android:pathData="M54,12m-42,0a42,42 0,1 1,84 0a42,42 0,1 1,-84 0" />
+
+    <!-- 内层圆形：稍亮的蓝色，为渐变效果 -->
+    <path
+        android:fillColor="#FF2196F3"
+        android:pathData="M54,18m-36,0a36,36 0,1 1,72 0a36,36 0,1 1,-72 0" />
+
+    <!-- 绿色渐变叠加（右下方） -->
+    <path
+        android:fillColor="#FF4CAF50"
+        android:pathData="M78,30m-18,0a18,18 0,1 1,36 0a18,18 0,1 1,-36 0" />
+    <path
+        android:fillColor="#FF2E7D32"
+        android:pathData="M78,65m-12,0a12,12 0,1 1,24 0a12,12 0,1 1,-24 0" />
+
+    <!-- 中间白色卡片（代表答案） -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M27,54m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0" />
+        android:pathData="M35,32L73,32Q74,32 74,33L74,76Q74,77 73,77L35,77Q34,77 34,76L34,33Q34,32 35,32Z" />
+
+    <!-- 卡片上的绿色勾选标记（底部） -->
+    <path
+        android:fillColor="#FF4CAF50"
+        android:pathData="M42,60l8,8l16,-18"
+        android:strokeWidth="3"
+        android:strokeColor="#FF4CAF50"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 顶部蓝色对勾标记（装饰） -->
+    <path
+        android:fillColor="#FF1976D2"
+        android:pathData="M42,48l6,6l12,-12"
+        android:strokeWidth="2.5"
+        android:strokeColor="#FF1976D2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 圆形装饰点（右上角小点缀） -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M54,54m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0" />
+        android:pathData="M78,22m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M81,54m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0" />
+        android:pathData="M82,28m-1.5,0a1.5,1.5 0,1 1,3 0a1.5,1.5 0,1 1,-3 0" />
+
+    <!-- 左侧装饰点 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,80m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0" />
+
 </vector>

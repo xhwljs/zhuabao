@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="primary">#1976D2</color>
-    <color name="primary_dark">#0D47A1</color>
-    <color name="accent">#FF5252</color>
-    <color name="answer_highlight">#c62828</color>
+    <color name="primary">#2196F3</color>
+    <color name="primary_dark">#1565C0</color>
+    <color name="accent">#4CAF50</color>
+    <color name="answer_highlight">#4CAF50</color>
     <color name="text_primary">#212121</color>
-    <color name="text_secondary">#757575</color>
+    <color name="text_secondary">#5C6674</color>
     <color name="bg_card">#FFFFFF</color>
-    <color name="divider">#BDBDBD</color>
+    <color name="divider">#E0E4EC</color>
+    <color name="icon_bg_blue">#E3F2FD</color>
+    <color name="icon_bg_green">#E8F5E9</color>
+    <color name="icon_bg_orange">#FFF3E0</color>
+    <color name="icon_bg_cyan">#E0F7FA</color>
+    <color name="card_border">#FFE0E4EC</color>
 </resources>

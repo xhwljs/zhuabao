@@ -252,9 +252,14 @@ public class StatsProvider extends ContentProvider {
             if (sp == null) return 0;
 
             if ("clear".equals(path)) {
-                // 清空全部
+                // 清空统计数据，但保留用户设置（如自动答题开关）
+                boolean savedAutoSelect = sp.getBoolean(KEY_AUTO_SELECT, false);
                 int count = sp.getAll().size();
                 sp.edit().clear().apply();
+                // 恢复自动答题状态
+                if (savedAutoSelect) {
+                    sp.edit().putBoolean(KEY_AUTO_SELECT, savedAutoSelect).apply();
+                }
                 try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
                 return count;
             }
