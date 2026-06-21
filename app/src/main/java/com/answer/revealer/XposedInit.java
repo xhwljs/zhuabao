@@ -1105,51 +1105,44 @@ public class XposedInit implements IXposedHookLoadPackage {
         // l(msg)：三路日志（console.log + document.title + 内存LOG数组）
         sb.append("function l(m){try{console.log('[ANSWER]'+TAG+' '+m);}catch(e){}try{document.title=TAG+':'+String(m).substring(0,40);}catch(e){}}");
 
-        // dc(el)：终极点击（多选题时可多次点击，单选时只点一次）
-        // 核心：逐级点击子元素+自身+祖先，确保 checkbox/radio 被触发
-        sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el)return;SEL++;");
-        sb.append("l('★CLICK! tag='+el.tagName+' cls='+(el.className||'')+' txt='+(el.innerText||el.value||'').substring(0,30));");
-        // 直接设置 checked（checkbox/radio）
-        sb.append("try{if(el.tagName==='INPUT'){el.checked=true;el.setAttribute('checked','checked');try{el.focus();}catch(e){}}}catch(e){}");
-        // 点击元素本身
+        // dc(el)：终极点击。只对 INPUT/BUTTON/LABEL/A/带onclick 的真正可交互元素点击+标绿
+        // 对LABEL/带onclick的容器，尝试找其内部第一个input checked+click
+        sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el||!el.tagName)return;");
+        sb.append("var t=(el.tagName||'').toUpperCase();if(t==='HTML'||t==='BODY'||t==='HEAD')return;");
+        sb.append("var isInt=(t==='INPUT'||t==='BUTTON'||t==='LABEL'||t==='A'||t==='SELECT'||t==='OPTION'||t==='TEXTAREA');");
+        sb.append("var hasClick=(el.onclick||(el.getAttribute&&el.getAttribute('onclick')));");
+        sb.append("if(!isInt&&!hasClick)return;SEL++;");
+        sb.append("l('★CLICK! tag='+t+' txt='+(el.innerText||el.value||'').substring(0,30));");
+        sb.append("try{if(t==='INPUT'){el.checked=true;el.setAttribute('checked','checked');try{el.focus();}catch(e){}}}catch(e){}");
         sb.append("try{if(el.click)el.click();}catch(e){}");
-        // 找子元素中的可点击元素（很多结构是 label>input+文字）
-        sb.append("try{var childs=el.querySelectorAll?el.querySelectorAll('input,button,label,[onclick],[role=button],[role=radio],[role=checkbox]'):null;if(childs&&childs.length>0){for(var ci=0;ci<childs.length;ci++){try{if(childs[ci].tagName==='INPUT'){childs[ci].checked=true;childs[ci].setAttribute('checked','checked');}childs[ci].click();}catch(e){}}}}catch(e){}");
-        // 向上查找15层：找带 onclick 或 INPUT/BUTTON/LABEL 的祖先元素
-        sb.append("try{var p=el;for(var z=0;z<15;z++){if(!p)break;if(p!==el){var ptn=(p.tagName||'').toUpperCase();if(ptn==='INPUT'||ptn==='BUTTON'||ptn==='LABEL'||p.onclick||(p.getAttribute&&p.getAttribute('onclick'))||(p.getAttribute&&p.getAttribute('role'))){try{if(ptn==='INPUT'){p.checked=true;p.setAttribute('checked','checked');}p.click();}catch(e){}break;}}p=p.parentElement;}}catch(e){}");
-        // 事件全面派发
-        sb.append("try{var evs=['click','mousedown','mouseup','change','input','touchstart','touchend'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0||evs[vi].indexOf('touch')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
-        // 标绿作为可视化标记
-        sb.append("try{el.style.backgroundColor='#4CAF50';el.style.color='#fff';}catch(e){}");
+        // 额外：对LABEL/带onclick的容器，尝试找其内部第一个input checked+click（label>input的常见结构）
+        sb.append("try{if(t==='LABEL'||hasClick){var sub=el.querySelector?el.querySelector('input[type=radio],input[type=checkbox],input[type=button],button,label'):null;if(sub){try{var st=(sub.tagName||'').toUpperCase();if(st==='INPUT'){sub.checked=true;sub.setAttribute('checked','checked');}sub.click();}catch(e){}}}catch(e){}");
+        sb.append("try{var evs=['click','mousedown','mouseup','change','input'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
+        // 标绿限制：只有明确的小元素才设置背景，防止整个大容器被标绿
+        sb.append("try{if(t==='INPUT'||t==='BUTTON'||t==='LABEL'||t==='A'||t==='OPTION'){el.style.backgroundColor='#4CAF50';el.style.color='#fff';}}catch(e){}");
         sb.append("}");
 
-        // fc(el)：从元素向上找可点击的元素（多选题时不限制单次点击）
+        // fc(el)：从元素向上找可点击的元素。只对交互元素本身dc()，不querySelectorAll子元素防止全页命中
         sb.append("function fc(el){if(!IS_MULTI&&SEL>0)return;l('FC:from '+el.tagName);");
-        sb.append("var cur=el;for(var li=0;li<25;li++){if(!cur)break;");
-        sb.append("var tn=cur.tagName;if(tn==='INPUT'||tn==='BUTTON'||tn==='LABEL'||tn==='A'||tn==='SELECT'||tn==='TEXTAREA'){l('FC:input '+tn);dc(cur);if(!IS_MULTI)return;}");
+        sb.append("var cur=el;for(var li=0;li<10;li++){if(!cur)break;");
+        sb.append("var tn=(cur.tagName||'').toUpperCase();if(tn==='HTML'||tn==='BODY'||tn==='HEAD')break;");
+        sb.append("if(tn==='INPUT'||tn==='BUTTON'||tn==='LABEL'||tn==='A'||tn==='SELECT'||tn==='OPTION'||tn==='TEXTAREA'){l('FC:input '+tn);dc(cur);if(!IS_MULTI)return;}");
         sb.append("if(cur.onclick||(cur.getAttribute&&cur.getAttribute('onclick'))){l('FC:onclick '+tn);dc(cur);if(!IS_MULTI)return;}");
-        sb.append("var inps=cur.querySelectorAll?cur.querySelectorAll('input,button,label,[onclick]'):null;if(inps&&inps.length>0){for(var xi=0;xi<inps.length;xi++){try{dc(inps[xi]);if(!IS_MULTI&&SEL>0)return;}catch(e){}}}");
         sb.append("cur=cur.parentElement;}");
-        sb.append("l('FC:fallback click');dc(el);}");
+        sb.append("l('FC:done');}");
 
-        // 策略1：TreeWalker 找"正确答案"标记 → 逐级向上对每一层都调用 dc()（确保命中 checkbox/radio）
+        // 策略1：TreeWalker 找"正确答案"标记 → 对每个匹配项调用 fc()（fc 内部逐级向上找可点击元素）
         sb.append("l('v8 start AT='+AT+' MULTI='+IS_MULTI);");
         sb.append("if(!D.body){l('body null');}else{");
         sb.append("var matches=[];var tw=D.createTreeWalker(D.body,NodeFilter.SHOW_TEXT,null,false);");
         sb.append("var node;while(node=tw.nextNode()){if(node.nodeValue&&node.nodeValue.indexOf('正确答案')>=0){var p=node.parentElement;if(p){matches.push(p);}}}");
         sb.append("l('策略1:匹配'+matches.length+'个');");
-        // 对每个匹配项：从元素向上15层，对每一层都尝试 dc()（确保能命中 checkbox/radio/label）
-        sb.append("for(var mi=0;mi<matches.length;mi++){try{");
-        sb.append("var em=matches[mi];var selBefore=SEL;");
-        sb.append("var cu=em;for(var zi=0;zi<15;zi++){if(!cu)break;try{dc(cu);}catch(e){}");
-        sb.append("if(!IS_MULTI&&SEL>selBefore)break;cu=cu.parentElement;}");
-        sb.append("l('策略1:第'+mi+'个处理完成 SEL='+SEL);");
-        sb.append("}catch(e){l('策略1:第'+mi+'个异常:'+e.message);}}");
+        sb.append("for(var mi=0;mi<matches.length;mi++){try{var selBefore2=SEL;fc(matches[mi]);l('策略1:第'+mi+'个处理完 SEL='+SEL);if(!IS_MULTI&&SEL>selBefore2)break;}catch(e){l('策略1:异常:'+e.message);}}");
 
-        // 策略2：querySelectorAll 兜底
-        sb.append("if(SEL===0){var all=D.body.querySelectorAll('*');l('策略2:scan '+all.length);");
-        sb.append("for(var qi=0;qi<all.length;qi++){var txt3='';try{txt3=(all[qi].innerText||all[qi].textContent||'').toString();}catch(e){}");
-        sb.append("if(txt3&&txt3.indexOf('正确答案')>=0){l('策略2:找到 '+all[qi].tagName);fc(all[qi]);if(SEL>0)break;}}}");
+        // 策略2：querySelectorAll 兜底（只扫描常见选项容器类型，不扫*）
+        sb.append("if(SEL===0){var all=D.body.querySelectorAll('label,span,li,p,button,input[type=radio],input[type=checkbox]');l('策略2:scan '+all.length);");
+        sb.append("for(var qi=0;qi<all.length;qi++){var txt3='';try{txt3=(all[qi].innerText||all[qi].textContent||all[qi].value||'').toString();}catch(e){}");
+        sb.append("if(txt3&&txt3.indexOf('正确答案')>=0&&txt3.length<300){l('策略2:找到 '+all[qi].tagName);fc(all[qi]);if(SEL>0)break;}}}");
 
         // 策略3：按原始答案文本搜索
         sb.append("if(SEL===0&&AT){l('策略3:按文本搜索 '+AT);");
@@ -1159,7 +1152,7 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("}"); // end if D.body
 
         // 策略4：MutationObserver（延迟执行的兜底）
-        sb.append("if(SEL===0&&window.MutationObserver){l('策略4:观察DOM');try{var obs=new MutationObserver(function(){if(SEL>0){obs.disconnect();return;}var ns=D.body.querySelectorAll('label,div,span,li,input,button');for(var oi=0;oi<ns.length;oi++){var t4='';try{t4=(ns[oi].innerText||ns[oi].textContent||'').toString();}catch(e){}if(t4&&t4.indexOf('正确答案')>=0){fc(ns[oi]);if(SEL>0){obs.disconnect();}}}});obs.observe(D.body||D.documentElement,{childList:true,subtree:true,characterData:true});setTimeout(function(){try{obs.disconnect();}catch(e){}},10000);}catch(e){l('策略4失败:'+e.message);}}");
+        sb.append("if(SEL===0&&window.MutationObserver){l('策略4:观察DOM');try{var obs=new MutationObserver(function(){if(SEL>0){obs.disconnect();return;}var ns=D.body.querySelectorAll('label,span,li,input,button');for(var oi=0;oi<ns.length;oi++){var t4='';try{t4=(ns[oi].innerText||ns[oi].textContent||'').toString();}catch(e){}if(t4&&t4.indexOf('正确答案')>=0){fc(ns[oi]);if(SEL>0){obs.disconnect();}}}});obs.observe(D.body||D.documentElement,{childList:true,subtree:true,characterData:true});setTimeout(function(){try{obs.disconnect();}catch(e){}},10000);}catch(e){l('策略4失败:'+e.message);}}");
 
         sb.append("l('v8 done SEL='+SEL);");
 
