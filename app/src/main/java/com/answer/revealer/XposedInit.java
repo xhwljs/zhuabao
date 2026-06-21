@@ -1102,17 +1102,17 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("l('★CLICK! '+FOUND);");
         sb.append("try{el.checked=true;el.setAttribute('checked','checked');}catch(e){}");
         sb.append("try{if(el.click)el.click();}catch(e){}");
-        sb.append("try{var p=el;for(var z=0;z<20;z++){if(!p)break;if(p.tagName==='INPUT'||p.tagName==='BUTTON'||p.tagName==='LABEL'||p.onclick!=null||p.getAttribute&&p.getAttribute('onclick')){if(p!==el){try{p.click();}catch(e){}}break;}p=p.parentElement;}}catch(e){}");
+        // 不再向上遍历click父容器——父容器的click会toggle已checked的input
         sb.append("try{var evs=['click','mousedown','mouseup','change','input'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
         // 不再设置backgroundColor，避免大容器被标绿导致全屏变绿；点击本身已提供足够反馈
         sb.append("l('DC:done SEL='+SEL);}");
 
-        // fc(el)：从元素向上找可点击的元素
+        // fc(el)：从元素向上找可点击的元素。找到后立即return——无论单选还是多选，都只点这一个
+        // 多选题由外部循环(for mi in mts)多次调用fc()逐个点击不同选项
         sb.append("function fc(el){if(!IS_MULTI&&SEL>0)return;l('FC:from '+el.tagName);");
         sb.append("var cur=el;for(var li=0;li<25;li++){if(!cur)break;");
-        sb.append("var tn=cur.tagName;if(tn==='INPUT'||tn==='BUTTON'||tn==='LABEL'||tn==='A'||tn==='SELECT'||tn==='TEXTAREA'){l('FC:input '+tn);dc(cur);if(!IS_MULTI)return;}");
-        sb.append("if(cur.onclick||cur.getAttribute&&cur.getAttribute('onclick')){l('FC:onclick '+tn);dc(cur);if(!IS_MULTI)return;}");
-        sb.append("var inps=cur.querySelectorAll?cur.querySelectorAll('input,button,label,[onclick]'):null;if(inps&&inps.length>0){for(var xi=0;xi<inps.length;xi++){try{dc(inps[xi]);if(!IS_MULTI&&SEL>0)return;}catch(e){}}}");
+        sb.append("var tn=cur.tagName;if(tn==='INPUT'||tn==='BUTTON'||tn==='LABEL'||tn==='A'||tn==='SELECT'||tn==='TEXTAREA'){l('FC:input '+tn);dc(cur);return;}");
+        sb.append("if(cur.onclick||(cur.getAttribute&&cur.getAttribute('onclick'))){l('FC:onclick '+tn);dc(cur);return;}");
         sb.append("cur=cur.parentElement;}");
         sb.append("l('FC:fallback dc(el)');dc(el);}");
 
