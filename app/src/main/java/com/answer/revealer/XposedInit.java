@@ -1090,19 +1090,21 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("var D=document;var SEL=0;var FOUND='';");
         // IS_MULTI: AT 含"、"分隔符 → 多选题, 否则单选题走原逻辑
         sb.append("var IS_MULTI=(AT.indexOf('、')>=0);");
+        // SEL_SET: 已点击元素的集合，用于去重（避免多策略重复点击同一元素）
+        sb.append("var SEL_SET=[];");
 
         // l(msg)：三路日志（console.log + document.title + 内存LOG数组）
         sb.append("function l(m){try{console.log('[ANSWER]'+TAG+' '+m);}catch(e){}try{document.title=TAG+':'+String(m).substring(0,40);}catch(e){}}");
 
         // dc(el)：终极点击
-        sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el)return;SEL++;");
+        sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el||SEL_SET.indexOf(el)>=0)return;SEL_SET.push(el);SEL++;");
         sb.append("FOUND=TAG+' tag='+el.tagName+' cls='+(el.className||'')+' txt='+(el.innerText||el.value||'').toString().substring(0,30);");
         sb.append("l('★CLICK! '+FOUND);");
         sb.append("try{el.checked=true;el.setAttribute('checked','checked');}catch(e){}");
         sb.append("try{if(el.click)el.click();}catch(e){}");
         sb.append("try{var p=el;for(var z=0;z<20;z++){if(!p)break;if(p.tagName==='INPUT'||p.tagName==='BUTTON'||p.tagName==='LABEL'||p.onclick!=null||p.getAttribute&&p.getAttribute('onclick')){if(p!==el){try{p.click();}catch(e){}}break;}p=p.parentElement;}}catch(e){}");
         sb.append("try{var evs=['click','mousedown','mouseup','change','input'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
-        sb.append("try{el.style.backgroundColor='#4CAF50';el.style.color='#fff';}catch(e){}");
+        // 不再设置backgroundColor，避免大容器被标绿导致全屏变绿；点击本身已提供足够反馈
         sb.append("l('DC:done SEL='+SEL);}");
 
         // fc(el)：从元素向上找可点击的元素
