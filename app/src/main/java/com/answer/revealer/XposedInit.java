@@ -1096,13 +1096,18 @@ public class XposedInit implements IXposedHookLoadPackage {
         // l(msg)：三路日志（console.log + document.title + 内存LOG数组）
         sb.append("function l(m){try{console.log('[ANSWER]'+TAG+' '+m);}catch(e){}try{document.title=TAG+':'+String(m).substring(0,40);}catch(e){}}");
 
-        // dc(el)：终极点击
+        // dc(el)：终极点击。分类型处理，避免 checked=true 后 click() toggle 回 false
         sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el||SEL_SET.indexOf(el)>=0)return;SEL_SET.push(el);SEL++;");
         sb.append("FOUND=TAG+' tag='+el.tagName+' cls='+(el.className||'')+' txt='+(el.innerText||el.value||'').toString().substring(0,30);");
         sb.append("l('★CLICK! '+FOUND);");
-        // 当el是LABEL时，先找到其关联的input再点击，避免点击父容器label导致选错选项
-        sb.append("var tn=(el.tagName||'').toUpperCase();if(tn==='LABEL'){var inp=null;var lfor=el.getAttribute?el.getAttribute('for'):null;if(lfor){inp=D.getElementById(lfor);}if(!inp&&el.querySelector){inp=el.querySelector('input[type=radio],input[type=checkbox]');}if(inp){l('DC:LABEL找input '+inp.tagName);dc(inp);return;}}");
-        sb.append("try{el.checked=true;el.setAttribute('checked','checked');}catch(e){}");
+        sb.append("var tn=(el.tagName||'').toUpperCase();");
+        // 1) INPUT(radio/checkbox): 只checked=true + dispatch change，不再click()（click会toggle回false）
+        sb.append("if(tn==='INPUT'){try{el.checked=true;el.setAttribute('checked','checked');}catch(e){}");
+        sb.append("try{var cevt;try{cevt=new Event('change',{bubbles:true,cancelable:true});}catch(e2){cevt=D.createEvent('HTMLEvents');cevt.initEvent('change',true,true);}el.dispatchEvent(cevt);}catch(e){}");
+        sb.append("l('DC:input done SEL='+SEL);return;}");
+        // 2) LABEL: 直接label.click()，由浏览器自动触发关联input的toggle（false→true，刚好选中）
+        sb.append("if(tn==='LABEL'){try{el.click();}catch(e){}l('DC:label done SEL='+SEL);return;}");
+        // 3) BUTTON/A/其他: click + dispatchEvent
         sb.append("try{if(el.click)el.click();}catch(e){}");
         sb.append("try{var evs=['click','mousedown','mouseup','change','input'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
         sb.append("l('DC:done SEL='+SEL);}");
