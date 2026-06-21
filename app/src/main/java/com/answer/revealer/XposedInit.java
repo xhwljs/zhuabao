@@ -1100,11 +1100,11 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el||SEL_SET.indexOf(el)>=0)return;SEL_SET.push(el);SEL++;");
         sb.append("FOUND=TAG+' tag='+el.tagName+' cls='+(el.className||'')+' txt='+(el.innerText||el.value||'').toString().substring(0,30);");
         sb.append("l('★CLICK! '+FOUND);");
+        // 当el是LABEL时，先找到其关联的input再点击，避免点击父容器label导致选错选项
+        sb.append("var tn=(el.tagName||'').toUpperCase();if(tn==='LABEL'){var inp=null;var lfor=el.getAttribute?el.getAttribute('for'):null;if(lfor){inp=D.getElementById(lfor);}if(!inp&&el.querySelector){inp=el.querySelector('input[type=radio],input[type=checkbox]');}if(inp){l('DC:LABEL找input '+inp.tagName);dc(inp);return;}}");
         sb.append("try{el.checked=true;el.setAttribute('checked','checked');}catch(e){}");
         sb.append("try{if(el.click)el.click();}catch(e){}");
-        // 不再向上遍历click父容器——父容器的click会toggle已checked的input
         sb.append("try{var evs=['click','mousedown','mouseup','change','input'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
-        // 不再设置backgroundColor，避免大容器被标绿导致全屏变绿；点击本身已提供足够反馈
         sb.append("l('DC:done SEL='+SEL);}");
 
         // fc(el)：从元素向上找可点击的元素。找到后立即return——无论单选还是多选，都只点这一个
