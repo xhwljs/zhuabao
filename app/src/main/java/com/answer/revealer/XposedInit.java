@@ -633,7 +633,29 @@ public class XposedInit implements IXposedHookLoadPackage {
             for (int i = 0; i < options.length(); i++) {
                 JSONObject opt = options.optJSONObject(i);
                 if (opt == null) continue;
-                if (opt.optInt("isRight") == 1) {
+                // 兼容：isRight 可能是 Int(1) 或 Boolean(true)；也可能叫 isCorrect / correct
+                boolean isCorrect = false;
+                try {
+                    // 先试 Int 1
+                    if (opt.optInt("isRight") == 1) isCorrect = true;
+                    // 再试 Boolean true（optInt对Boolean返回0，所以单独判断）
+                    if (!isCorrect) {
+                        if (opt.has("isRight")) {
+                            Object v = opt.get("isRight");
+                            if (Boolean.TRUE.equals(v)) isCorrect = true;
+                            else if (Boolean.FALSE.equals(v)) isCorrect = false;
+                        }
+                    }
+                    // 兜底：其他字段名
+                    if (!isCorrect) {
+                        String[] fields = {"isRight", "isCorrect", "correct", "optionRight", "isAnswer"};
+                        for (String field : fields) {
+                            if (opt.optBoolean(field)) { isCorrect = true; break; }
+                            if (opt.optInt(field) == 1) { isCorrect = true; break; }
+                        }
+                    }
+                } catch (Throwable ignored) {}
+                if (isCorrect) {
                     String text = opt.optString("optionText", "");
                     correctAnswers.add(text);
                     opt.put("optionText", "【 " + text + " 正确答案 】");
