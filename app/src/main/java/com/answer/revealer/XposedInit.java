@@ -629,22 +629,28 @@ public class XposedInit implements IXposedHookLoadPackage {
             JSONArray options = data.optJSONArray("answerOptionList");
             if (options == null || options.length() == 0) return bodyStr;
             boolean changed = false;
+            java.util.List<String> correctAnswers = new java.util.ArrayList<String>();
             for (int i = 0; i < options.length(); i++) {
                 JSONObject opt = options.optJSONObject(i);
                 if (opt == null) continue;
                 if (opt.optInt("isRight") == 1) {
                     String text = opt.optString("optionText", "");
-                    // 存储正确答案原始文本，供 JS 直接选中使用
-                    sCorrectAnswerText = text;
-                    sMarkedAnswerText = "【 " + text + " 正确答案 】";
-                    sCorrectAnswerTimestamp = System.currentTimeMillis();
-                    // 重置"已自动选中"标志（这是一道新题目，可以再次自动选中）
-                    sAlreadyAutoSelected.set(false);
-                    // 同时写入 ContentProvider 作为备份
-                    writeAnswerToProvider(text, sMarkedAnswerText);
-                    opt.put("optionText", sMarkedAnswerText);
+                    correctAnswers.add(text);
+                    opt.put("optionText", "【 " + text + " 正确答案 】");
                     changed = true;
                 }
+            }
+            if (changed && correctAnswers.size() > 0) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < correctAnswers.size(); i++) {
+                    if (i > 0) sb.append("、");
+                    sb.append(correctAnswers.get(i));
+                }
+                sCorrectAnswerText = sb.toString();
+                sMarkedAnswerText = "【 " + sb.toString() + " 正确答案 】";
+                sCorrectAnswerTimestamp = System.currentTimeMillis();
+                sAlreadyAutoSelected.set(false);
+                writeAnswerToProvider(sCorrectAnswerText, sMarkedAnswerText);
             }
             return changed ? root.toString() : bodyStr;
         } catch (Throwable t) {
@@ -1082,12 +1088,14 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("var TAG='").append(safeTag).append("';");
         sb.append("var AT='").append(safeA).append("';");
         sb.append("var D=document;var SEL=0;var FOUND='';");
+        // IS_MULTI: AT 含"、"分隔符 → 多选题, 否则单选题走原逻辑
+        sb.append("var IS_MULTI=(AT.indexOf('、')>=0);");
 
         // l(msg)：三路日志（console.log + document.title + 内存LOG数组）
         sb.append("function l(m){try{console.log('[ANSWER]'+TAG+' '+m);}catch(e){}try{document.title=TAG+':'+String(m).substring(0,40);}catch(e){}}");
 
         // dc(el)：终极点击
-        sb.append("function dc(el){if(SEL>0||!el)return;SEL++;");
+        sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el)return;SEL++;");
         sb.append("FOUND=TAG+' tag='+el.tagName+' cls='+(el.className||'')+' txt='+(el.innerText||el.value||'').toString().substring(0,30);");
         sb.append("l('★CLICK! '+FOUND);");
         sb.append("try{el.checked=true;el.setAttribute('checked','checked');}catch(e){}");
@@ -1098,35 +1106,39 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("l('DC:done SEL='+SEL);}");
 
         // fc(el)：从元素向上找可点击的元素
-        sb.append("function fc(el){if(SEL>0)return;l('FC:from '+el.tagName);");
+        sb.append("function fc(el){if(!IS_MULTI&&SEL>0)return;l('FC:from '+el.tagName);");
         sb.append("var cur=el;for(var li=0;li<25;li++){if(!cur)break;");
-        sb.append("var tn=cur.tagName;if(tn==='INPUT'||tn==='BUTTON'||tn==='LABEL'||tn==='A'||tn==='SELECT'||tn==='TEXTAREA'){l('FC:input '+tn);dc(cur);return;}");
-        sb.append("if(cur.onclick||cur.getAttribute&&cur.getAttribute('onclick')){l('FC:onclick '+tn);dc(cur);return;}");
-        sb.append("var inps=cur.querySelectorAll?cur.querySelectorAll('input,button,label,[onclick]'):null;if(inps&&inps.length>0){for(var xi=0;xi<inps.length;xi++){try{dc(inps[xi]);if(SEL>0)return;}catch(e){}}}");
+        sb.append("var tn=cur.tagName;if(tn==='INPUT'||tn==='BUTTON'||tn==='LABEL'||tn==='A'||tn==='SELECT'||tn==='TEXTAREA'){l('FC:input '+tn);dc(cur);if(!IS_MULTI)return;}");
+        sb.append("if(cur.onclick||cur.getAttribute&&cur.getAttribute('onclick')){l('FC:onclick '+tn);dc(cur);if(!IS_MULTI)return;}");
+        sb.append("var inps=cur.querySelectorAll?cur.querySelectorAll('input,button,label,[onclick]'):null;if(inps&&inps.length>0){for(var xi=0;xi<inps.length;xi++){try{dc(inps[xi]);if(!IS_MULTI&&SEL>0)return;}catch(e){}}}");
         sb.append("cur=cur.parentElement;}");
-        sb.append("l('FC:fallback click');dc(el);}");
+        sb.append("l('FC:fallback dc(el)');dc(el);}");
 
         // 策略1：TreeWalker 找"正确答案"标记
-        sb.append("l('v8 start AT='+AT);");
+        sb.append("l('v8 start AT='+AT+' MULTI='+IS_MULTI);");
         sb.append("if(!D.body){l('body null');}else{");
         sb.append("var tw=D.createTreeWalker(D.body,NodeFilter.SHOW_TEXT,null,false);");
-        sb.append("var node,mt=null;while(node=tw.nextNode()){if(node.nodeValue&&node.nodeValue.indexOf('正确答案')>=0){var p=node.parentElement;if(p){mt=p;l('策略1:找到 '+node.nodeValue.substring(0,40));break;}}}");
-        sb.append("if(mt){fc(mt);}else{l('策略1:未找到');}");
+        // 收集所有含"正确答案"的节点,循环每个都调用fc();单选题时IS_MULTI=false,fc()内部dc()只点一个后return
+        sb.append("var node, mts=[];while(node=tw.nextNode()){if(node.nodeValue&&node.nodeValue.indexOf('正确答案')>=0){var p=node.parentElement;if(p){mts.push(p);}}}");
+        sb.append("for(var mi=0;mi<mts.length;mi++){try{fc(mts[mi]);}catch(e){}if(!IS_MULTI&&SEL>0)break;}");
+        sb.append("if(mts.length===0){l('策略1:未找到');}");
 
         // 策略2：querySelectorAll 兜底
-        sb.append("if(SEL===0){var all=D.body.querySelectorAll('*');l('策略2:scan '+all.length);");
+        sb.append("if(IS_MULTI?true:SEL===0){var all=D.body.querySelectorAll('*');l('策略2:scan '+all.length);");
         sb.append("for(var qi=0;qi<all.length;qi++){var txt3='';try{txt3=(all[qi].innerText||all[qi].textContent||'').toString();}catch(e){}");
-        sb.append("if(txt3&&txt3.indexOf('正确答案')>=0){l('策略2:找到 '+all[qi].tagName);fc(all[qi]);if(SEL>0)break;}}}");
+        sb.append("if(txt3&&txt3.indexOf('正确答案')>=0){l('策略2:找到 '+all[qi].tagName);fc(all[qi]);if(!IS_MULTI&&SEL>0)break;}}}");
 
-        // 策略3：按原始答案文本搜索
-        sb.append("if(SEL===0&&AT){l('策略3:按文本搜索 '+AT);");
+        // 策略3：按原始答案文本搜索（多选题时按"、"拆分关键词逐个搜索）
+        sb.append("if((IS_MULTI?true:SEL===0)&&AT){l('策略3:按文本搜索 '+AT);");
+        sb.append("var kwArr=IS_MULTI?AT.split('、'):[AT];");
         sb.append("var all3=D.body.querySelectorAll('label,div,span,li,p,input,button');");
-        sb.append("for(var si=0;si<all3.length;si++){var t3='';try{t3=(all3[si].innerText||all3[si].textContent||all3[si].value||'').toString();}catch(e){}if(t3&&t3.length<200&&t3.indexOf(AT)>=0){l('策略3:找到 '+all3[si].tagName);fc(all3[si]);if(SEL>0)break;}}");
+        sb.append("for(var ki=0;ki<kwArr.length;ki++){if(!IS_MULTI&&SEL>0)break;var kw=String(kwArr[ki]||'').trim();if(!kw)continue;");
+        sb.append("for(var si=0;si<all3.length;si++){var t3='';try{t3=(all3[si].innerText||all3[si].textContent||all3[si].value||'').toString();}catch(e){}if(t3&&t3.length<200&&t3.indexOf(kw)>=0){l('策略3:找到 '+all3[si].tagName+' k='+kw.substring(0,20));fc(all3[si]);if(!IS_MULTI&&SEL>0)break;}}}");
         sb.append("}");
         sb.append("}"); // end if D.body
 
-        // 策略4：MutationObserver（延迟执行的兜底）
-        sb.append("if(SEL===0&&window.MutationObserver){l('策略4:观察DOM');try{var obs=new MutationObserver(function(){if(SEL>0){obs.disconnect();return;}var ns=D.body.querySelectorAll('label,div,span,li,input,button');for(var oi=0;oi<ns.length;oi++){var t4='';try{t4=(ns[oi].innerText||ns[oi].textContent||'').toString();}catch(e){}if(t4&&t4.indexOf('正确答案')>=0){fc(ns[oi]);if(SEL>0){obs.disconnect();}}}});obs.observe(D.body||D.documentElement,{childList:true,subtree:true,characterData:true});setTimeout(function(){try{obs.disconnect();}catch(e){}},10000);}catch(e){l('策略4失败:'+e.message);}}");
+        // 策略4：MutationObserver（延迟执行的兜底；多选题时保持持续观察10秒,单选题首次成功即断开）
+        sb.append("if((IS_MULTI?true:SEL===0)&&window.MutationObserver){l('策略4:观察DOM MULTI='+IS_MULTI);try{var obs=new MutationObserver(function(){var ns=D.body.querySelectorAll('label,div,span,li,input,button');for(var oi=0;oi<ns.length;oi++){var t4='';try{t4=(ns[oi].innerText||ns[oi].textContent||'').toString();}catch(e){}if(t4&&t4.indexOf('正确答案')>=0){fc(ns[oi]);}}if(!IS_MULTI&&SEL>0){obs.disconnect();}});obs.observe(D.body||D.documentElement,{childList:true,subtree:true,characterData:true});setTimeout(function(){try{obs.disconnect();}catch(e){}},10000);}catch(e){l('策略4失败:'+e.message);}}");
 
         sb.append("l('v8 done SEL='+SEL);");
 
