@@ -48,17 +48,27 @@ public class MainActivity extends Activity {
     // 配置项 key
     private static final String KEY_AUTO_SELECT = "auto_select_enabled";
 
-    // 颜色配置（Material Design 风格）
-    private static final int COLOR_PRIMARY = 0xFF2196F3;
-    private static final int COLOR_PRIMARY_DARK = 0xFF1976D2;
-    private static final int COLOR_ACCENT = 0xFF4CAF50;
-    private static final int COLOR_WARNING = 0xFFFF9800;
-    private static final int COLOR_DANGER = 0xFFF44336;
-    private static final int COLOR_INFO = 0xFF00BCD4;
-    private static final int COLOR_TEXT_PRIMARY = 0xFF212121;
-    private static final int COLOR_TEXT_SECONDARY = 0xFF757575;
-    private static final int COLOR_BG = 0xFFF5F7FA;
-    private static final int COLOR_CARD = 0xFFFFFFFF;
+    // ============ UI/UX Pro Max 设计系统 ============
+    // Pattern: Scroll-Triggered Storytelling | Style: Vibrant & Block-based + Micro-interactions
+    // 主题：Code Dark + Run Green  (developer tool / IDE style)
+    private static final int DS_BG           = 0xFF0F172A; // slate-900, page bg
+    private static final int DS_CARD         = 0xFF1E293B; // slate-800, card surface
+    private static final int DS_CARD_ELEV    = 0xFF334155; // slate-700, elevated surface
+    private static final int DS_BORDER       = 0xFF334155; // slate-700
+    private static final int DS_TEXT         = 0xFFF8FAFC; // slate-50, primary text
+    private static final int DS_TEXT_MUTED   = 0xFF94A3B8; // slate-400, secondary text
+    private static final int DS_TEXT_DIM     = 0xFF64748B; // slate-500, tertiary text
+    private static final int DS_CTA          = 0xFF22C55E; // emerald-500, "run green" CTA
+    private static final int DS_CTA_DARK     = 0xFF15803D; // emerald-700, dark CTA
+    private static final int DS_CTA_LIGHT    = 0xFF86EFAC; // emerald-300, light CTA
+    private static final int DS_ERROR        = 0xFFEF4444; // red-500
+    private static final int DS_ERROR_LIGHT  = 0xFFFEE2E2; // red-50
+    private static final int DS_WARNING      = 0xFFF59E0B; // amber-500
+    private static final int DS_INFO         = 0xFF3B82F6; // blue-500
+    private static final int DS_INFO_LIGHT   = 0xFFDBEAFE; // blue-50
+    private static final int DS_PURPLE       = 0xFF8B5CF6; // violet-500
+    private static final int DS_SKY          = 0xFF06B6D4; // cyan-500
+    private static final int DS_ORANGE       = 0xFFF97316; // orange-500
 
     // 分页 & 截断
     private static final int PAGE_SIZE = 10;
@@ -250,8 +260,8 @@ public class MainActivity extends Activity {
     private void renderUI() {
         int pad = dp(14);
         ScrollView scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(COLOR_BG);
-        scrollView.setPadding(0, dp(4), 0, dp(20));
+        scrollView.setBackgroundColor(DS_BG);
+        scrollView.setPadding(0, dp(8), 0, dp(32));
         scrollView.setId(android.R.id.list);
 
         LinearLayout root = new LinearLayout(this);
@@ -283,40 +293,57 @@ public class MainActivity extends Activity {
         setContentView(scrollView);
     }
 
-    // ============ 顶部栏（全新设计） ============
+    // ============ 顶部栏（UI/UX Pro Max 重新设计） ============
+    // Pattern: Scroll-Triggered Storytelling hero | Style: Code Dark + Run Green
     private void addHeader(LinearLayout root) {
-        // 外层卡片容器
+        // 外层主卡片：深色代码编辑器背景
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable cardGd = new GradientDrawable();
-        cardGd.setColors(new int[]{0xFF4F46E5, 0xFF6366F1});
-        cardGd.setCornerRadius(dp(24));
+        cardGd.setColor(DS_CARD);
+        cardGd.setCornerRadius(dp(20));
+        cardGd.setStroke(dp(1), DS_BORDER);
         card.setBackground(cardGd);
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(18), dp(20), dp(18), dp(20));
 
-        // ========== 顶部：模块主标题区 ==========
+        // ========== 顶部 Hero：圆形图标 + 标题 + 技术标签 ==========
         LinearLayout headerRow = new LinearLayout(this);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        // 左侧渐变大圆图标
+        // 左侧渐变圆形图标容器：绿色高亮（CTA 颜色）
         LinearLayout iconWrap = new LinearLayout(this);
         iconWrap.setGravity(Gravity.CENTER);
         GradientDrawable iwGd = new GradientDrawable();
         iwGd.setShape(GradientDrawable.OVAL);
-        iwGd.setColors(new int[]{0xFFFFFFFF, 0xFFE0E7FF});
+        iwGd.setColors(new int[]{DS_CTA, DS_CTA_DARK});
         iconWrap.setBackground(iwGd);
-        LinearLayout.LayoutParams iwLp = new LinearLayout.LayoutParams(dp(64), dp(64));
+        iconWrap.setPadding(dp(1), dp(1), dp(1), dp(1));
+        LinearLayout.LayoutParams iwLp = new LinearLayout.LayoutParams(dp(60), dp(60));
         iconWrap.setLayoutParams(iwLp);
 
+        // 内层深色圆形
+        LinearLayout innerIcon = new LinearLayout(this);
+        innerIcon.setGravity(Gravity.CENTER);
+        GradientDrawable innerBg = new GradientDrawable();
+        innerBg.setShape(GradientDrawable.OVAL);
+        innerBg.setColor(DS_CARD);
+        innerIcon.setBackground(innerBg);
+        LinearLayout.LayoutParams innerLp = new LinearLayout.LayoutParams(dp(56), dp(56));
+        innerIcon.setLayoutParams(innerLp);
+
+        // 白色 Terminal-style ">" 标记
         TextView iconTv = new TextView(this);
-        iconTv.setText("🎯");
-        iconTv.setTextSize(28);
+        iconTv.setText(">_");
+        iconTv.setTextSize(18);
+        iconTv.setTextColor(DS_CTA_LIGHT);
         iconTv.setGravity(Gravity.CENTER);
-        iconWrap.addView(iconTv);
+        iconTv.setTypeface(null, android.graphics.Typeface.BOLD);
+        innerIcon.addView(iconTv);
+        iconWrap.addView(innerIcon);
         headerRow.addView(iconWrap);
 
         // 右侧文字区
@@ -327,178 +354,192 @@ public class MainActivity extends Activity {
         taLp.leftMargin = dp(14);
         textArea.setLayoutParams(taLp);
 
-        // 标题 + 副标题
+        // 大标题：应用名称
         TextView title = new TextView(this);
-        title.setText("答案显示模块");
-        title.setTextSize(20);
-        title.setTextColor(0xFFFFFFFF);
+        title.setText("Answer Revealer");
+        title.setTextSize(18);
+        title.setTextColor(DS_TEXT);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         textArea.addView(title);
 
+        // 副标题
         TextView subtitle = new TextView(this);
-        subtitle.setText("LSPosed Hook 管理工具");
-        subtitle.setTextSize(12);
-        subtitle.setTextColor(0xFFE0E7FF);
+        subtitle.setText("答案显示模块 · LSPosed Hook");
+        subtitle.setTextSize(11);
+        subtitle.setTextColor(DS_TEXT_MUTED);
         LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         subLp.topMargin = dp(4);
         subtitle.setLayoutParams(subLp);
         textArea.addView(subtitle);
 
-        // 装饰标签：模块版本
+        // 状态胶囊标签行：三个装饰性标签
         LinearLayout tagRow = new LinearLayout(this);
         tagRow.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams trLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        trLp.topMargin = dp(8);
+        trLp.topMargin = dp(10);
         tagRow.setLayoutParams(trLp);
 
+        // Tag 1: 绿色 "ACTIVE" 风格
+        LinearLayout tag1Wrap = new LinearLayout(this);
+        tag1Wrap.setOrientation(LinearLayout.HORIZONTAL);
+        tag1Wrap.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable t1Bg = new GradientDrawable();
+        t1Bg.setColor(DS_CTA_DARK);
+        t1Bg.setCornerRadius(dp(100));
+        tag1Wrap.setBackground(t1Bg);
+        tag1Wrap.setPadding(dp(10), dp(4), dp(10), dp(4));
+
+        TextView t1Dot = new TextView(this);
+        t1Dot.setText("●");
+        t1Dot.setTextSize(8);
+        t1Dot.setTextColor(DS_CTA_LIGHT);
+        t1Dot.setGravity(Gravity.CENTER);
+        tag1Wrap.addView(t1Dot);
+
         TextView tag1 = new TextView(this);
-        tag1.setText("MODULE v1.0");
+        tag1.setText(" MODULE v1.0");
         tag1.setTextSize(10);
-        tag1.setTextColor(0xFF6366F1);
+        tag1.setTextColor(DS_CTA_LIGHT);
         tag1.setGravity(Gravity.CENTER);
         tag1.setTypeface(null, android.graphics.Typeface.BOLD);
-        GradientDrawable t1Bg = new GradientDrawable();
-        t1Bg.setColor(0xFFFFFFFF);
-        t1Bg.setCornerRadius(dp(10));
-        tag1.setBackground(t1Bg);
-        tag1.setPadding(dp(10), dp(4), dp(10), dp(4));
-        tagRow.addView(tag1);
+        tag1Wrap.addView(tag1);
+        tagRow.addView(tag1Wrap);
 
-        TextView tag2 = new TextView(this);
-        tag2.setText("  HOOK  ");
-        tag2.setTextSize(10);
-        tag2.setTextColor(0xFFFFFFFF);
-        tag2.setGravity(Gravity.CENTER);
-        tag2.setTypeface(null, android.graphics.Typeface.BOLD);
+        // Tag 2: 蓝色 "HOOK"
+        LinearLayout tag2Wrap = new LinearLayout(this);
+        tag2Wrap.setOrientation(LinearLayout.HORIZONTAL);
+        tag2Wrap.setGravity(Gravity.CENTER_VERTICAL);
         GradientDrawable t2Bg = new GradientDrawable();
-        t2Bg.setColor(0x33FFFFFF);
-        t2Bg.setStroke(dp(1), 0xFFFFFFFF);
-        t2Bg.setCornerRadius(dp(10));
-        tag2.setBackground(t2Bg);
-        tag2.setPadding(dp(10), dp(4), dp(10), dp(4));
+        t2Bg.setColor(DS_CARD_ELEV);
+        t2Bg.setCornerRadius(dp(100));
+        t2Bg.setStroke(dp(1), DS_BORDER);
+        tag2Wrap.setBackground(t2Bg);
+        tag2Wrap.setPadding(dp(10), dp(4), dp(10), dp(4));
         LinearLayout.LayoutParams t2Lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         t2Lp.leftMargin = dp(6);
-        tag2.setLayoutParams(t2Lp);
-        tagRow.addView(tag2);
+        tag2Wrap.setLayoutParams(t2Lp);
+
+        TextView tag2 = new TextView(this);
+        tag2.setText("HOOK");
+        tag2.setTextSize(10);
+        tag2.setTextColor(DS_TEXT);
+        tag2.setGravity(Gravity.CENTER);
+        tag2.setTypeface(null, android.graphics.Typeface.BOLD);
+        tag2Wrap.addView(tag2);
+        tagRow.addView(tag2Wrap);
 
         textArea.addView(tagRow);
         headerRow.addView(textArea);
         content.addView(headerRow);
 
-        // ========== 分隔线 ==========
-        View divider = new View(this);
-        GradientDrawable divGd = new GradientDrawable();
-        divGd.setColor(0x33FFFFFF);
-        divider.setBackground(divGd);
-        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
-        divLp.topMargin = dp(18);
-        divider.setLayoutParams(divLp);
-        content.addView(divider);
-
-        // ========== 底部：白色信息卡片 ==========
+        // ========== 中间状态小卡片：显示 target 信息 ==========
+        // 使用带边框的暗色卡片，左右两列布局
         LinearLayout infoCard = new LinearLayout(this);
         infoCard.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable infoBg = new GradientDrawable();
-        infoBg.setColor(0xFFFFFFFF);
-        infoBg.setCornerRadius(dp(16));
+        infoBg.setColor(0xFF0B1220); // slightly darker inset card
+        infoBg.setCornerRadius(dp(14));
+        infoBg.setStroke(dp(1), DS_BORDER);
         infoCard.setBackground(infoBg);
-        infoCard.setPadding(dp(14), dp(12), dp(14), dp(12));
+        infoCard.setPadding(dp(14), dp(14), dp(14), dp(14));
         LinearLayout.LayoutParams icLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        icLp.topMargin = dp(14);
+        icLp.topMargin = dp(16);
         infoCard.setLayoutParams(icLp);
 
-        // --- 信息行 1：状态徽章 + 包名 ---
-        LinearLayout infoRow1 = new LinearLayout(this);
-        infoRow1.setOrientation(LinearLayout.HORIZONTAL);
-        infoRow1.setGravity(Gravity.CENTER_VERTICAL);
+        // 信息行 1：目标应用
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.setGravity(Gravity.CENTER_VERTICAL);
 
-        // 信息图标
-        TextView ic1 = new TextView(this);
-        ic1.setText("📦");
-        ic1.setTextSize(14);
-        ic1.setGravity(Gravity.CENTER);
-        infoRow1.addView(ic1);
+        LinearLayout labelCol = new LinearLayout(this);
+        labelCol.setOrientation(LinearLayout.VERTICAL);
+        labelCol.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.4f));
 
-        // 信息标签
-        TextView il1 = new TextView(this);
-        il1.setText("  目标应用");
-        il1.setTextSize(12);
-        il1.setTextColor(0xFF64748B);
-        infoRow1.addView(il1);
+        TextView r1Label = new TextView(this);
+        r1Label.setText("TARGET_APP");
+        r1Label.setTextSize(9);
+        r1Label.setTextColor(DS_TEXT_DIM);
+        r1Label.setTypeface(null, android.graphics.Typeface.BOLD);
+        labelCol.addView(r1Label);
 
-        // 右侧：状态 + 包名
+        TextView r1Value = new TextView(this);
+        r1Value.setText(TARGET_PACKAGE);
+        r1Value.setTextSize(11);
+        r1Value.setTextColor(DS_CTA_LIGHT);
+        r1Value.setTypeface(null, android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams r1vLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        r1vLp.topMargin = dp(2);
+        r1Value.setLayoutParams(r1vLp);
+        labelCol.addView(r1Value);
+        row1.addView(labelCol);
+
+        // 右侧：状态徽章
         LinearLayout rightCol = new LinearLayout(this);
-        rightCol.setOrientation(LinearLayout.HORIZONTAL);
         rightCol.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
-        LinearLayout.LayoutParams rcLp = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        rcLp.leftMargin = dp(10);
-        rightCol.setLayoutParams(rcLp);
+        LinearLayout.LayoutParams rColLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.6f);
+        rightCol.setLayoutParams(rColLp);
 
+        LinearLayout statusPill = new LinearLayout(this);
+        statusPill.setOrientation(LinearLayout.HORIZONTAL);
+        statusPill.setGravity(Gravity.CENTER_VERTICAL);
         boolean installed = isPackageInstalled(TARGET_PACKAGE);
-        TextView badge = new TextView(this);
-        badge.setText(installed ? "已安装" : "未安装");
-        badge.setTextSize(10);
-        badge.setTextColor(0xFFFFFFFF);
-        badge.setGravity(Gravity.CENTER);
-        badge.setTypeface(null, android.graphics.Typeface.BOLD);
-        GradientDrawable badgeBg = new GradientDrawable();
-        badgeBg.setColor(installed ? 0xFF10B981 : 0xFFEF4444);
-        badgeBg.setCornerRadius(dp(100));
-        badge.setBackground(badgeBg);
-        badge.setPadding(dp(10), dp(4), dp(10), dp(4));
-        rightCol.addView(badge);
+        GradientDrawable spBg = new GradientDrawable();
+        spBg.setColor(installed ? DS_CTA_DARK : 0xFF7F1D1D);
+        spBg.setCornerRadius(dp(100));
+        statusPill.setBackground(spBg);
+        statusPill.setPadding(dp(10), dp(5), dp(10), dp(5));
 
-        TextView pkgTv = new TextView(this);
-        pkgTv.setText("  " + TARGET_PACKAGE);
-        pkgTv.setTextSize(11);
-        pkgTv.setTextColor(0xFF334155);
-        pkgTv.setTypeface(null, android.graphics.Typeface.BOLD);
-        rightCol.addView(pkgTv);
+        TextView spDot = new TextView(this);
+        spDot.setText("●");
+        spDot.setTextSize(8);
+        spDot.setTextColor(installed ? DS_CTA_LIGHT : 0xFFFECACA);
+        spDot.setGravity(Gravity.CENTER);
+        statusPill.addView(spDot);
 
-        infoRow1.addView(rightCol);
-        infoCard.addView(infoRow1);
+        TextView spText = new TextView(this);
+        spText.setText(" " + (installed ? "已安装" : "未安装"));
+        spText.setTextSize(10);
+        spText.setTextColor(installed ? DS_CTA_LIGHT : 0xFFFECACA);
+        spText.setTypeface(null, android.graphics.Typeface.BOLD);
+        statusPill.addView(spText);
+        rightCol.addView(statusPill);
+        row1.addView(rightCol);
 
-        // --- 分隔线 ---
+        infoCard.addView(row1);
+
+        // 分隔线
         View sep = new View(this);
         GradientDrawable sepGd = new GradientDrawable();
-        sepGd.setColor(0xFFE2E8F0);
+        sepGd.setColor(DS_BORDER);
         sep.setBackground(sepGd);
         LinearLayout.LayoutParams sepLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
-        sepLp.topMargin = dp(10);
-        sepLp.bottomMargin = dp(10);
+        sepLp.topMargin = dp(12);
+        sepLp.bottomMargin = dp(12);
         sep.setLayoutParams(sepLp);
         infoCard.addView(sep);
 
-        // --- 信息行 2：版本 ---
-        LinearLayout infoRow2 = new LinearLayout(this);
-        infoRow2.setOrientation(LinearLayout.HORIZONTAL);
-        infoRow2.setGravity(Gravity.CENTER_VERTICAL);
+        // 信息行 2：版本号
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        row2.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView ic2 = new TextView(this);
-        ic2.setText("⚙️");
-        ic2.setTextSize(14);
-        ic2.setGravity(Gravity.CENTER);
-        infoRow2.addView(ic2);
+        LinearLayout r2LabelCol = new LinearLayout(this);
+        r2LabelCol.setOrientation(LinearLayout.VERTICAL);
+        r2LabelCol.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.4f));
 
-        TextView il2 = new TextView(this);
-        il2.setText("  应用版本");
-        il2.setTextSize(12);
-        il2.setTextColor(0xFF64748B);
-        infoRow2.addView(il2);
-
-        LinearLayout rightCol2 = new LinearLayout(this);
-        rightCol2.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
-        LinearLayout.LayoutParams rc2Lp = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        rc2Lp.leftMargin = dp(10);
-        rightCol2.setLayoutParams(rc2Lp);
+        TextView r2Label = new TextView(this);
+        r2Label.setText("APP_VERSION");
+        r2Label.setTextSize(9);
+        r2Label.setTextColor(DS_TEXT_DIM);
+        r2Label.setTypeface(null, android.graphics.Typeface.BOLD);
+        r2LabelCol.addView(r2Label);
 
         String versionName = null;
         try {
@@ -506,28 +547,59 @@ public class MainActivity extends Activity {
             if (pi != null && pi.versionName != null) versionName = pi.versionName;
         } catch (Throwable ignored) {}
 
-        TextView vv = new TextView(this);
+        TextView r2Value = new TextView(this);
         if (versionName != null) {
-            vv.setText("v" + versionName);
-            vv.setTextColor(0xFF6366F1);
+            r2Value.setText("v" + versionName);
+            r2Value.setTextColor(DS_CTA);
         } else {
-            vv.setText("--");
-            vv.setTextColor(0xFF94A3B8);
+            r2Value.setText("— not detected —");
+            r2Value.setTextColor(DS_TEXT_DIM);
         }
-        vv.setTextSize(12);
-        vv.setGravity(Gravity.CENTER);
-        vv.setTypeface(null, android.graphics.Typeface.BOLD);
-        rightCol2.addView(vv);
-        infoRow2.addView(rightCol2);
+        r2Value.setTextSize(12);
+        r2Value.setTypeface(null, android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams r2vLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        r2vLp.topMargin = dp(2);
+        r2Value.setLayoutParams(r2vLp);
+        r2LabelCol.addView(r2Value);
+        row2.addView(r2LabelCol);
 
-        infoCard.addView(infoRow2);
+        // 右侧：Module ID
+        LinearLayout r2Right = new LinearLayout(this);
+        r2Right.setOrientation(LinearLayout.VERTICAL);
+        r2Right.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+        LinearLayout.LayoutParams r2rLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.6f);
+        r2Right.setLayoutParams(r2rLp);
+
+        TextView r2IdLabel = new TextView(this);
+        r2IdLabel.setText("MODULE_ID");
+        r2IdLabel.setTextSize(9);
+        r2IdLabel.setTextColor(DS_TEXT_DIM);
+        r2IdLabel.setGravity(Gravity.END);
+        r2IdLabel.setTypeface(null, android.graphics.Typeface.BOLD);
+        r2Right.addView(r2IdLabel);
+
+        TextView r2IdValue = new TextView(this);
+        r2IdValue.setText(MODULE_PACKAGE);
+        r2IdValue.setTextSize(10);
+        r2IdValue.setTextColor(DS_TEXT_MUTED);
+        r2IdValue.setGravity(Gravity.END);
+        LinearLayout.LayoutParams r2ivLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        r2ivLp.topMargin = dp(2);
+        r2IdValue.setLayoutParams(r2ivLp);
+        r2Right.addView(r2IdValue);
+        row2.addView(r2Right);
+
+        infoCard.addView(row2);
 
         content.addView(infoCard);
         card.addView(content);
         root.addView(card, cardParams());
     }
 
-    // ============ 模块状态卡（现代化） ============
+    // ============ 模块状态卡（UI/UX Pro Max 深色主题） ============
     private void addStatusCard(LinearLayout root, StatsData data) {
         boolean active = data != null && data.moduleActive;
         boolean autoOn = data != null && data.autoSelectEnabled;
@@ -535,46 +607,81 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable cardGd = new GradientDrawable();
-        cardGd.setColor(0xFFFFFFFF);
+        cardGd.setColor(DS_CARD);
         cardGd.setCornerRadius(dp(20));
-        cardGd.setStroke(dp(1), 0xFFE8ECF4);
+        cardGd.setStroke(dp(1), DS_BORDER);
         card.setBackground(cardGd);
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(18), dp(18), dp(18), dp(18));
 
-        // === 顶部状态区域（渐变条 + 状态信息） ===
+        // === 模块状态标题行 ===
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout titleWrap = new LinearLayout(this);
+        titleWrap.setGravity(Gravity.CENTER);
+        GradientDrawable twGd = new GradientDrawable();
+        twGd.setColor(active ? DS_CTA_DARK : 0xFF7F1D1D);
+        twGd.setCornerRadius(dp(8));
+        titleWrap.setBackground(twGd);
+        titleWrap.setPadding(dp(6), dp(4), dp(6), dp(4));
+
+        TextView tIcon = new TextView(this);
+        tIcon.setText("⏚");
+        tIcon.setTextSize(12);
+        tIcon.setTextColor(DS_CTA_LIGHT);
+        tIcon.setGravity(Gravity.CENTER);
+        tIcon.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleWrap.addView(tIcon);
+        titleRow.addView(titleWrap);
+
+        TextView title = new TextView(this);
+        title.setText(" MODULE_STATUS");
+        title.setTextSize(13);
+        title.setTextColor(DS_TEXT);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleRow.addView(title);
+
+        content.addView(titleRow);
+
+        // === 状态条：深色卡片内带渐变圆角容器 ===
         LinearLayout statusBanner = new LinearLayout(this);
         statusBanner.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable sbGd = new GradientDrawable();
         if (active) {
-            sbGd.setColors(new int[]{0xFF10B981, 0xFF059669});
+            sbGd.setColors(new int[]{DS_CTA, DS_CTA_DARK});
         } else {
-            sbGd.setColors(new int[]{0xFFEF4444, 0xFFDC2626});
+            sbGd.setColors(new int[]{DS_ERROR, 0xFF991B1B});
         }
         sbGd.setCornerRadius(dp(14));
         statusBanner.setBackground(sbGd);
         statusBanner.setPadding(dp(16), dp(14), dp(16), dp(14));
+        LinearLayout.LayoutParams sbLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        sbLp.topMargin = dp(14);
+        statusBanner.setLayoutParams(sbLp);
 
         LinearLayout sbRow = new LinearLayout(this);
         sbRow.setOrientation(LinearLayout.HORIZONTAL);
         sbRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        // 图标：白色圆圈 + emoji
+        // 状态图标：白色圆 + 符号
         LinearLayout sbIconWrap = new LinearLayout(this);
         sbIconWrap.setGravity(Gravity.CENTER);
         GradientDrawable sbIconBg = new GradientDrawable();
         sbIconBg.setShape(GradientDrawable.OVAL);
         sbIconBg.setColor(0xFFFFFFFF);
         sbIconWrap.setBackground(sbIconBg);
-        LinearLayout.LayoutParams silp = new LinearLayout.LayoutParams(dp(42), dp(42));
+        LinearLayout.LayoutParams silp = new LinearLayout.LayoutParams(dp(40), dp(40));
         sbIconWrap.setLayoutParams(silp);
 
         TextView sbIcon = new TextView(this);
         sbIcon.setText(active ? "✓" : "!");
         sbIcon.setTextSize(20);
-        sbIcon.setTextColor(active ? 0xFF10B981 : 0xFFEF4444);
+        sbIcon.setTextColor(active ? DS_CTA_DARK : DS_ERROR);
         sbIcon.setTypeface(null, android.graphics.Typeface.BOLD);
         sbIcon.setGravity(Gravity.CENTER);
         sbIconWrap.addView(sbIcon);
@@ -584,12 +691,12 @@ public class MainActivity extends Activity {
         LinearLayout sbText = new LinearLayout(this);
         sbText.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams stLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        stLp.leftMargin = dp(12);
+        stLp.leftMargin = dp(14);
         sbText.setLayoutParams(stLp);
 
         TextView sbTitle = new TextView(this);
         sbTitle.setText(active ? "模块已激活" : "模块未激活");
-        sbTitle.setTextSize(16);
+        sbTitle.setTextSize(15);
         sbTitle.setTextColor(0xFFFFFFFF);
         sbTitle.setTypeface(null, android.graphics.Typeface.BOLD);
         sbText.addView(sbTitle);
@@ -605,30 +712,34 @@ public class MainActivity extends Activity {
         sbText.addView(sbDesc);
         sbRow.addView(sbText);
 
-        // 右侧徽章
-        TextView stateBadge = new TextView(this);
-        stateBadge.setText(active ? "ON" : "OFF");
-        stateBadge.setTextSize(11);
-        stateBadge.setTextColor(active ? 0xFF10B981 : 0xFFEF4444);
+        // 右侧：状态徽章（药丸形）
+        LinearLayout stateBadge = new LinearLayout(this);
         stateBadge.setGravity(Gravity.CENTER);
-        stateBadge.setTypeface(null, android.graphics.Typeface.BOLD);
-        GradientDrawable stBg = new GradientDrawable();
-        stBg.setColor(0xFFFFFFFF);
-        stBg.setCornerRadius(dp(20));
-        stateBadge.setBackground(stBg);
-        stateBadge.setPadding(dp(14), dp(6), dp(14), dp(6));
+        GradientDrawable sbgBg = new GradientDrawable();
+        sbgBg.setColor(0xFFFFFFFF);
+        sbgBg.setCornerRadius(dp(20));
+        stateBadge.setBackground(sbgBg);
+        stateBadge.setPadding(dp(12), dp(5), dp(12), dp(5));
+
+        TextView stateBadgeText = new TextView(this);
+        stateBadgeText.setText(active ? "ACTIVE" : "INACTIVE");
+        stateBadgeText.setTextSize(10);
+        stateBadgeText.setTextColor(active ? DS_CTA_DARK : DS_ERROR);
+        stateBadgeText.setTypeface(null, android.graphics.Typeface.BOLD);
+        stateBadge.addView(stateBadgeText);
         sbRow.addView(stateBadge);
 
         statusBanner.addView(sbRow);
         content.addView(statusBanner);
 
-        // === 自动答题状态小卡片 ===
+        // === 自动答题状态卡片（深色内嵌） ===
         LinearLayout autoRow = new LinearLayout(this);
         autoRow.setOrientation(LinearLayout.HORIZONTAL);
         autoRow.setGravity(Gravity.CENTER_VERTICAL);
         GradientDrawable arGd = new GradientDrawable();
-        arGd.setColor(autoOn ? 0xFFECFDF5 : 0xFFF1F5F9);
+        arGd.setColor(autoOn ? 0xFF0B2218 : 0xFF1E293B);
         arGd.setCornerRadius(dp(12));
+        arGd.setStroke(dp(1), autoOn ? DS_CTA_DARK : DS_BORDER);
         autoRow.setBackground(arGd);
         autoRow.setPadding(dp(14), dp(12), dp(14), dp(12));
         LinearLayout.LayoutParams arLp = new LinearLayout.LayoutParams(
@@ -636,12 +747,25 @@ public class MainActivity extends Activity {
         arLp.topMargin = dp(14);
         autoRow.setLayoutParams(arLp);
 
-        TextView autoEmoji = new TextView(this);
-        autoEmoji.setText(autoOn ? "⚡" : "⚙");
-        autoEmoji.setTextSize(18);
-        autoEmoji.setGravity(Gravity.CENTER);
-        autoRow.addView(autoEmoji);
+        // 左：小图标圆
+        LinearLayout aCircle = new LinearLayout(this);
+        aCircle.setGravity(Gravity.CENTER);
+        GradientDrawable acGd = new GradientDrawable();
+        acGd.setShape(GradientDrawable.OVAL);
+        acGd.setColor(autoOn ? DS_CTA : DS_CARD_ELEV);
+        aCircle.setBackground(acGd);
+        LinearLayout.LayoutParams acLp = new LinearLayout.LayoutParams(dp(34), dp(34));
+        aCircle.setLayoutParams(acLp);
 
+        TextView aEmoji = new TextView(this);
+        aEmoji.setText(autoOn ? "⚡" : "⚙");
+        aEmoji.setTextSize(14);
+        aEmoji.setTextColor(0xFFFFFFFF);
+        aEmoji.setGravity(Gravity.CENTER);
+        aCircle.addView(aEmoji);
+        autoRow.addView(aCircle);
+
+        // 中间：文字
         LinearLayout autoText = new LinearLayout(this);
         autoText.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams atLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
@@ -649,16 +773,16 @@ public class MainActivity extends Activity {
         autoText.setLayoutParams(atLp);
 
         TextView autoTitle = new TextView(this);
-        autoTitle.setText("自动答题功能");
-        autoTitle.setTextSize(13);
-        autoTitle.setTextColor(0xFF1E293B);
+        autoTitle.setText("AUTO_ANSWER");
+        autoTitle.setTextSize(11);
+        autoTitle.setTextColor(autoOn ? DS_CTA_LIGHT : DS_TEXT_MUTED);
         autoTitle.setTypeface(null, android.graphics.Typeface.BOLD);
         autoText.addView(autoTitle);
 
         TextView autoDesc = new TextView(this);
         autoDesc.setText(autoOn ? "已启用，自动识别并点击正确答案" : "已关闭，需手动操作");
         autoDesc.setTextSize(11);
-        autoDesc.setTextColor(0xFF64748B);
+        autoDesc.setTextColor(autoOn ? DS_TEXT : DS_TEXT_MUTED);
         LinearLayout.LayoutParams adLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         adLp.topMargin = dp(2);
@@ -666,39 +790,55 @@ public class MainActivity extends Activity {
         autoText.addView(autoDesc);
         autoRow.addView(autoText);
 
-        TextView autoBadge = new TextView(this);
-        autoBadge.setText(autoOn ? "已启用" : "已关闭");
-        autoBadge.setTextSize(11);
-        autoBadge.setTextColor(0xFFFFFFFF);
-        autoBadge.setGravity(Gravity.CENTER);
-        autoBadge.setTypeface(null, android.graphics.Typeface.BOLD);
+        // 右：状态标签
+        LinearLayout aBadgeWrap = new LinearLayout(this);
+        aBadgeWrap.setGravity(Gravity.CENTER);
         GradientDrawable abBg = new GradientDrawable();
-        abBg.setColor(autoOn ? 0xFF10B981 : 0xFF94A3B8);
+        abBg.setColor(autoOn ? DS_CTA_DARK : DS_CARD_ELEV);
         abBg.setCornerRadius(dp(20));
-        autoBadge.setBackground(abBg);
-        autoBadge.setPadding(dp(12), dp(5), dp(12), dp(5));
-        autoRow.addView(autoBadge);
+        aBadgeWrap.setBackground(abBg);
+        aBadgeWrap.setPadding(dp(10), dp(5), dp(10), dp(5));
+
+        TextView aBadge = new TextView(this);
+        aBadge.setText(autoOn ? "ENABLED" : "DISABLED");
+        aBadge.setTextSize(9);
+        aBadge.setTextColor(0xFFFFFFFF);
+        aBadge.setTypeface(null, android.graphics.Typeface.BOLD);
+        aBadgeWrap.addView(aBadge);
+        autoRow.addView(aBadgeWrap);
 
         content.addView(autoRow);
 
-        // === 功能亮点网格标题 ===
-        TextView featTitle = new TextView(this);
-        featTitle.setText("✨  功能亮点");
-        featTitle.setTextSize(14);
-        featTitle.setTextColor(0xFF1A202C);
-        featTitle.setTypeface(null, android.graphics.Typeface.BOLD);
-        LinearLayout.LayoutParams ftLp = new LinearLayout.LayoutParams(
+        // === 功能亮点标题（FEATURES） ===
+        LinearLayout featTitleRow = new LinearLayout(this);
+        featTitleRow.setOrientation(LinearLayout.HORIZONTAL);
+        featTitleRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams ftrLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        ftLp.topMargin = dp(16);
-        ftLp.bottomMargin = dp(4);
-        featTitle.setLayoutParams(ftLp);
-        content.addView(featTitle);
+        ftrLp.topMargin = dp(16);
+        ftrLp.bottomMargin = dp(4);
+        featTitleRow.setLayoutParams(ftrLp);
 
-        // === 功能亮点（每行：彩色圆角方图标 + 标题 + 描述） ===
-        int[] iconBgs = {0xFFFFF3E0, 0xFFE3F2FD, 0xFFE8F5E9, 0xFFF3E5F5, 0xFFE0F7FA};
-        int[] iconColors = {0xFFF59E0B, 0xFF3B82F6, 0xFF10B981, 0xFF8B5CF6, 0xFF06B6D4};
-        String[] featEmojis = {"🎯", "📝", "⚡", "🔒", "📊"};
-        String[] featTitles = {"答案识别", "多题型支持", "自动点击", "数据共享", "实时统计"};
+        LinearLayout featTagWrap = new LinearLayout(this);
+        featTagWrap.setGravity(Gravity.CENTER);
+        GradientDrawable ftwGd = new GradientDrawable();
+        ftwGd.setColor(DS_CARD_ELEV);
+        ftwGd.setCornerRadius(dp(6));
+        featTagWrap.setBackground(ftwGd);
+        featTagWrap.setPadding(dp(8), dp(3), dp(8), dp(3));
+
+        TextView featTag = new TextView(this);
+        featTag.setText("FEATURES");
+        featTag.setTextSize(9);
+        featTag.setTextColor(DS_TEXT_MUTED);
+        featTag.setTypeface(null, android.graphics.Typeface.BOLD);
+        featTagWrap.addView(featTag);
+        featTitleRow.addView(featTagWrap);
+        content.addView(featTitleRow);
+
+        // === 功能亮点列表（每行：彩色圆章 + 标题 + 描述） ===
+        int[] iconColors = {DS_WARNING, DS_INFO, DS_CTA, DS_PURPLE, DS_SKY};
+        String[] featLabels = {"答案识别", "多题型支持", "自动点击", "数据共享", "实时统计"};
         String[] featDescs = {
                 "自动识别正确答案并高亮标记",
                 "支持单选 / 多选 / 判断 / 填空题",
@@ -707,58 +847,78 @@ public class MainActivity extends Activity {
                 "实时显示命中次数与请求记录"
         };
 
-        for (int i = 0; i < featTitles.length; i++) {
+        for (int i = 0; i < featLabels.length; i++) {
             LinearLayout hRow = new LinearLayout(this);
             hRow.setOrientation(LinearLayout.HORIZONTAL);
             hRow.setGravity(Gravity.CENTER_VERTICAL);
+            GradientDrawable rowBg = new GradientDrawable();
+            rowBg.setColor(0xFF0B1220);
+            rowBg.setCornerRadius(dp(12));
+            rowBg.setStroke(dp(1), DS_BORDER);
+            hRow.setBackground(rowBg);
+            hRow.setPadding(dp(12), dp(12), dp(12), dp(12));
             LinearLayout.LayoutParams hrp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            hrp.topMargin = dp(10);
+            hrp.topMargin = dp(8);
             hRow.setLayoutParams(hrp);
 
-            // 彩色圆角方图标
+            // 左侧彩色圆章
             LinearLayout bulletBox = new LinearLayout(this);
             bulletBox.setGravity(Gravity.CENTER);
             GradientDrawable bbGd = new GradientDrawable();
-            bbGd.setShape(GradientDrawable.RECTANGLE);
-            bbGd.setCornerRadius(dp(12));
-            bbGd.setColor(iconBgs[i]);
+            bbGd.setShape(GradientDrawable.OVAL);
+            bbGd.setColor(iconColors[i]);
             bulletBox.setBackground(bbGd);
-            LinearLayout.LayoutParams bblp = new LinearLayout.LayoutParams(dp(38), dp(38));
+            LinearLayout.LayoutParams bblp = new LinearLayout.LayoutParams(dp(28), dp(28));
             bulletBox.setLayoutParams(bblp);
 
             TextView bulletTv = new TextView(this);
-            bulletTv.setText(featEmojis[i]);
-            bulletTv.setTextSize(16);
+            bulletTv.setText(String.valueOf(i + 1));
+            bulletTv.setTextSize(12);
+            bulletTv.setTextColor(0xFFFFFFFF);
+            bulletTv.setTypeface(null, android.graphics.Typeface.BOLD);
             bulletTv.setGravity(Gravity.CENTER);
             bulletBox.addView(bulletTv);
             hRow.addView(bulletBox);
 
-            // 文字：标题（彩色） + 描述（灰色小字）
-            LinearLayout textRow = new LinearLayout(this);
-            textRow.setOrientation(LinearLayout.VERTICAL);
-            LinearLayout.LayoutParams trLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            trLp.leftMargin = dp(12);
-            textRow.setLayoutParams(trLp);
+            // 文字
+            LinearLayout textCol = new LinearLayout(this);
+            textCol.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams tclp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            tclp.leftMargin = dp(12);
+            textCol.setLayoutParams(tclp);
 
             TextView rowTitle = new TextView(this);
-            rowTitle.setText(featTitles[i]);
+            rowTitle.setText(featLabels[i]);
             rowTitle.setTextSize(13);
-            rowTitle.setTextColor(iconColors[i]);
+            rowTitle.setTextColor(DS_TEXT);
             rowTitle.setTypeface(null, android.graphics.Typeface.BOLD);
-            textRow.addView(rowTitle);
+            textCol.addView(rowTitle);
 
             TextView rowDesc = new TextView(this);
             rowDesc.setText(featDescs[i]);
             rowDesc.setTextSize(11);
-            rowDesc.setTextColor(0xFF64748B);
+            rowDesc.setTextColor(DS_TEXT_MUTED);
             LinearLayout.LayoutParams rdLp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             rdLp.topMargin = dp(2);
             rowDesc.setLayoutParams(rdLp);
-            textRow.addView(rowDesc);
+            textCol.addView(rowDesc);
 
-            hRow.addView(textRow);
+            hRow.addView(textCol);
+
+            // 右：小圆形装饰点
+            LinearLayout dotBox = new LinearLayout(this);
+            dotBox.setGravity(Gravity.CENTER);
+            GradientDrawable dotGd = new GradientDrawable();
+            dotGd.setShape(GradientDrawable.OVAL);
+            dotGd.setColor(iconColors[i]);
+            dotBox.setBackground(dotGd);
+            LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dp(8), dp(8));
+            dotBox.setLayoutParams(dotLp);
+            hRow.addView(dotBox);
+
             content.addView(hRow);
         }
 
@@ -768,9 +928,9 @@ public class MainActivity extends Activity {
             tipBox.setOrientation(LinearLayout.HORIZONTAL);
             tipBox.setGravity(Gravity.CENTER_VERTICAL);
             GradientDrawable tipGd = new GradientDrawable();
-            tipGd.setColor(0xFFFEF2F2);
+            tipGd.setColor(0xFF1C0F0F);
             tipGd.setCornerRadius(dp(12));
-            tipGd.setStroke(dp(1), 0xFFFECACA);
+            tipGd.setStroke(dp(1), 0xFF7F1D1D);
             tipBox.setBackground(tipGd);
             tipBox.setPadding(dp(14), dp(12), dp(14), dp(12));
             LinearLayout.LayoutParams tipLp = new LinearLayout.LayoutParams(
@@ -778,17 +938,28 @@ public class MainActivity extends Activity {
             tipLp.topMargin = dp(16);
             tipBox.setLayoutParams(tipLp);
 
-            TextView tipIcon = new TextView(this);
-            tipIcon.setText("📌");
-            tipIcon.setTextSize(16);
-            tipIcon.setGravity(Gravity.CENTER);
-            tipBox.addView(tipIcon);
+            // 左：三角形警示图标
+            LinearLayout tiWrap = new LinearLayout(this);
+            tiWrap.setGravity(Gravity.CENTER);
+            GradientDrawable tiGd = new GradientDrawable();
+            tiGd.setColor(0xFF7F1D1D);
+            tiGd.setCornerRadius(dp(8));
+            tiWrap.setBackground(tiGd);
+            tiWrap.setPadding(dp(6), dp(5), dp(6), dp(5));
+            TextView tiIcon = new TextView(this);
+            tiIcon.setText("!");
+            tiIcon.setTextSize(12);
+            tiIcon.setTextColor(0xFFFECACA);
+            tiIcon.setTypeface(null, android.graphics.Typeface.BOLD);
+            tiIcon.setGravity(Gravity.CENTER);
+            tiWrap.addView(tiIcon);
+            tipBox.addView(tiWrap);
 
             TextView tipText = new TextView(this);
             tipText.setText("请在 LSPosed 管理器中启用本模块，作用域需包含：\n• "
                     + TARGET_PACKAGE + "\n• " + MODULE_PACKAGE);
             tipText.setTextSize(11);
-            tipText.setTextColor(0xFFB91C1C);
+            tipText.setTextColor(0xFFFECACA);
             tipText.setLineSpacing(dp(2), 1f);
             LinearLayout.LayoutParams ttLp = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
@@ -803,48 +974,60 @@ public class MainActivity extends Activity {
         root.addView(card, cardParams());
     }
 
-    // ============ 快捷操作卡（核心：自动答题开关 + 操作按钮） ============
+    // ============ 快捷操作卡（UI/UX Pro Max 深色主题） ============
     private void addActionCard(LinearLayout root, StatsData data) {
         final boolean[] toggleState = {data != null && data.autoSelectEnabled};
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable cardGd = new GradientDrawable();
-        cardGd.setColor(0xFFFFFFFF);
+        cardGd.setColor(DS_CARD);
         cardGd.setCornerRadius(dp(20));
-        cardGd.setStroke(dp(1), 0xFFE8ECF4);
+        cardGd.setStroke(dp(1), DS_BORDER);
         card.setBackground(cardGd);
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(18), dp(18), dp(18), dp(18));
 
-        // 标题
+        // 标题：QUICK_ACTIONS 标签
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView titleIcon = new TextView(this);
-        titleIcon.setText("🚀");
-        titleIcon.setTextSize(16);
-        titleRow.addView(titleIcon);
+        LinearLayout titleWrap = new LinearLayout(this);
+        titleWrap.setGravity(Gravity.CENTER);
+        GradientDrawable twGd = new GradientDrawable();
+        twGd.setColor(DS_CTA_DARK);
+        twGd.setCornerRadius(dp(8));
+        titleWrap.setBackground(twGd);
+        titleWrap.setPadding(dp(8), dp(4), dp(8), dp(4));
+
+        TextView tIcon = new TextView(this);
+        tIcon.setText("▶");
+        tIcon.setTextSize(10);
+        tIcon.setTextColor(DS_CTA_LIGHT);
+        tIcon.setTypeface(null, android.graphics.Typeface.BOLD);
+        tIcon.setGravity(Gravity.CENTER);
+        titleWrap.addView(tIcon);
+        titleRow.addView(titleWrap);
 
         TextView header = new TextView(this);
-        header.setText(" 快捷操作");
-        header.setTextSize(15);
-        header.setTextColor(0xFF1A202C);
+        header.setText(" QUICK_ACTIONS");
+        header.setTextSize(13);
+        header.setTextColor(DS_TEXT);
         header.setTypeface(null, android.graphics.Typeface.BOLD);
         titleRow.addView(header);
         content.addView(titleRow);
 
-        // ============ 自动答题开关卡片 ============
+        // ============ 自动答题开关卡片（深色主题 + iOS 风格滑动开关） ============
         final LinearLayout toggleCard = new LinearLayout(this);
         toggleCard.setOrientation(LinearLayout.VERTICAL);
         final GradientDrawable toggleBg = new GradientDrawable();
         if (toggleState[0]) {
-            toggleBg.setColors(new int[]{0xFF10B981, 0xFF059669});
+            toggleBg.setColors(new int[]{DS_CTA, DS_CTA_DARK});
         } else {
-            toggleBg.setColors(new int[]{0xFF64748B, 0xFF475569});
+            toggleBg.setColors(new int[]{0xFF334155, 0xFF1E293B});
         }
         toggleBg.setCornerRadius(dp(16));
         toggleCard.setBackground(toggleBg);
@@ -882,12 +1065,11 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams tcolLp = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         tcolLp.leftMargin = dp(14);
-        tcolLp.rightMargin = dp(10);
         textCol.setLayoutParams(tcolLp);
 
         final TextView toggleTitle = new TextView(this);
-        toggleTitle.setText("自动答题");
-        toggleTitle.setTextSize(16);
+        toggleTitle.setText("AUTO_ANSWER");
+        toggleTitle.setTextSize(14);
         toggleTitle.setTextColor(0xFFFFFFFF);
         toggleTitle.setTypeface(null, android.graphics.Typeface.BOLD);
         textCol.addView(toggleTitle);
@@ -904,10 +1086,10 @@ public class MainActivity extends Activity {
 
         toggleMain.addView(textCol);
 
-        // ====== 右：iOS 风格滑动开关（FrameLayout + gravity，可左右滑动） ======
+        // ====== 右：iOS 风格滑动开关（FrameLayout + gravity 控制左右滑动） ======
         final android.widget.FrameLayout switchTrack = new android.widget.FrameLayout(this);
         final GradientDrawable scGd = new GradientDrawable();
-        scGd.setColor(toggleState[0] ? 0xFFFFFFFF : 0xFFE2E8F0);
+        scGd.setColor(toggleState[0] ? 0xFFFFFFFF : 0xFF64748B);
         scGd.setCornerRadius(dp(18));
         switchTrack.setBackground(scGd);
         LinearLayout.LayoutParams scLp = new LinearLayout.LayoutParams(dp(60), dp(32));
@@ -916,8 +1098,8 @@ public class MainActivity extends Activity {
         final View switchThumb = new View(this);
         final GradientDrawable thumbGd = new GradientDrawable();
         thumbGd.setShape(GradientDrawable.OVAL);
-        thumbGd.setColor(toggleState[0] ? 0xFF10B981 : 0xFFFFFFFF);
-        thumbGd.setStroke(dp(2), toggleState[0] ? 0xFFFFFFFF : 0xFFCBD5E0);
+        thumbGd.setColor(toggleState[0] ? DS_CTA : 0xFFCBD5E1);
+        thumbGd.setStroke(dp(2), 0xFFFFFFFF);
         switchThumb.setBackground(thumbGd);
         final android.widget.FrameLayout.LayoutParams thumbLp =
                 new android.widget.FrameLayout.LayoutParams(dp(28), dp(28),
@@ -935,7 +1117,7 @@ public class MainActivity extends Activity {
         statusRow.setOrientation(LinearLayout.HORIZONTAL);
         statusRow.setGravity(Gravity.CENTER_VERTICAL);
         GradientDrawable srGd = new GradientDrawable();
-        srGd.setColor(toggleState[0] ? 0x33FFFFFF : 0x22FFFFFF);
+        srGd.setColor(0x22FFFFFF);
         srGd.setCornerRadius(dp(10));
         statusRow.setBackground(srGd);
         statusRow.setPadding(dp(12), dp(8), dp(12), dp(8));
@@ -947,7 +1129,7 @@ public class MainActivity extends Activity {
         final TextView statusDot = new TextView(this);
         statusDot.setText("●");
         statusDot.setTextSize(10);
-        statusDot.setTextColor(toggleState[0] ? 0xFFA7F3D0 : 0xFFCBD5E1);
+        statusDot.setTextColor(toggleState[0] ? DS_CTA_LIGHT : 0xFF94A3B8);
         statusDot.setGravity(Gravity.CENTER);
         statusRow.addView(statusDot);
 
@@ -971,20 +1153,19 @@ public class MainActivity extends Activity {
                 toggleState[0] = !toggleState[0];
 
                 if (toggleState[0]) {
-                    toggleBg.setColors(new int[]{0xFF10B981, 0xFF059669});
+                    toggleBg.setColors(new int[]{DS_CTA, DS_CTA_DARK});
                 } else {
-                    toggleBg.setColors(new int[]{0xFF64748B, 0xFF475569});
+                    toggleBg.setColors(new int[]{0xFF334155, 0xFF1E293B});
                 }
 
                 toggleDesc.setText(toggleState[0] ? "自动识别并点击正确答案" : "点击右侧开关开启此功能");
                 statusText.setText(toggleState[0] ? " 功能已启用，自动答题生效中" : " 功能已关闭，点击上方开关开启");
-                statusDot.setTextColor(toggleState[0] ? 0xFFA7F3D0 : 0xFFCBD5E1);
-                srGd.setColor(toggleState[0] ? 0x33FFFFFF : 0x22FFFFFF);
+                statusDot.setTextColor(toggleState[0] ? DS_CTA_LIGHT : 0xFF94A3B8);
 
-                // 更新 iOS 开关：track 背景色 + thumb 位置（用 gravity）
-                scGd.setColor(toggleState[0] ? 0xFFFFFFFF : 0xFFE2E8F0);
-                thumbGd.setColor(toggleState[0] ? 0xFF10B981 : 0xFFFFFFFF);
-                thumbGd.setStroke(dp(2), toggleState[0] ? 0xFFFFFFFF : 0xFFCBD5E0);
+                // 更新 iOS 开关（gravity 控制左右滑动位置）
+                scGd.setColor(toggleState[0] ? 0xFFFFFFFF : 0xFF64748B);
+                thumbGd.setColor(toggleState[0] ? DS_CTA : 0xFFCBD5E1);
+                thumbGd.setStroke(dp(2), 0xFFFFFFFF);
                 thumbLp.gravity = toggleState[0] ? (Gravity.RIGHT | Gravity.CENTER_VERTICAL)
                                                   : (Gravity.LEFT | Gravity.CENTER_VERTICAL);
                 switchThumb.setLayoutParams(thumbLp);
@@ -1011,10 +1192,10 @@ public class MainActivity extends Activity {
 
         content.addView(toggleCard);
 
-        // 主按钮：启动目标应用
-        Button launchBtn = makeActionButton("🚀 启动目标应用",
-                new int[]{0xFF6366F1, 0xFF4F46E5},
-                0xFFFFFFFF, true, false);
+        // 主按钮：RUN / 启动目标应用（绿色主按钮）
+        Button launchBtn = makeActionButton("▶ RUN 启动目标应用",
+                new int[]{DS_CTA, DS_CTA_DARK},
+                DS_TEXT, true, false);
         LinearLayout.LayoutParams lbLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lbLp.topMargin = dp(14);
@@ -1025,7 +1206,7 @@ public class MainActivity extends Activity {
         });
         content.addView(launchBtn);
 
-        // 并排按钮：刷新 + 清空
+        // 并排按钮：刷新 + 清空（深色内嵌卡片风格）
         LinearLayout btnRow = new LinearLayout(this);
         btnRow.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams brLp = new LinearLayout.LayoutParams(
@@ -1033,9 +1214,9 @@ public class MainActivity extends Activity {
         brLp.topMargin = dp(10);
         btnRow.setLayoutParams(brLp);
 
-        Button refreshBtn = makeActionButton("🔄 刷新数据",
-                new int[]{0xFFDBEAFE, 0xFFBFDBFE},
-                0xFF1D4ED8, false, true);
+        Button refreshBtn = makeActionButton("↻ 刷新数据",
+                new int[]{0xFF0F172A, 0xFF1E293B},
+                DS_TEXT_MUTED, false, true);
         LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         rLp.rightMargin = dp(8);
@@ -1050,9 +1231,9 @@ public class MainActivity extends Activity {
         });
         btnRow.addView(refreshBtn);
 
-        Button clearBtn = makeActionButton("🗑 清空统计",
-                new int[]{0xFFFFEDD5, 0xFFFED7AA},
-                0xFFC2410C, false, true);
+        Button clearBtn = makeActionButton("✕ 清空统计",
+                new int[]{0xFF0F172A, 0xFF1E293B},
+                DS_TEXT_MUTED, false, true);
         LinearLayout.LayoutParams cLp = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         clearBtn.setLayoutParams(cLp);
@@ -1090,12 +1271,12 @@ public class MainActivity extends Activity {
         root.addView(card, cardParams());
     }
 
-    // 辅助方法：创建统一风格的操作按钮
+    // 辅助方法：深色主题操作按钮
     private Button makeActionButton(String text, int[] colors, int textColor, boolean main, boolean subtle) {
         Button btn = new Button(this);
         btn.setText(text);
         btn.setTextColor(textColor);
-        btn.setTextSize(main ? 15 : 14);
+        btn.setTextSize(main ? 15 : 13);
         btn.setTypeface(null, android.graphics.Typeface.BOLD);
         btn.setAllCaps(false);
 
@@ -1103,41 +1284,52 @@ public class MainActivity extends Activity {
         bg.setColors(colors);
         bg.setCornerRadius(dp(14));
         if (subtle) {
-            bg.setStroke(dp(1), 0xFFE2E8F0);
+            bg.setStroke(dp(1), DS_BORDER);
         }
         btn.setBackground(bg);
         btn.setPadding(dp(16), dp(14), dp(16), dp(14));
         return btn;
     }
 
-    // ============ 统计数据卡（列表形式） ============
+    // ============ 统计数据卡（深色主题） ============
     private void addStatsCard(LinearLayout root, StatsData data) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable cardGd = new GradientDrawable();
-        cardGd.setColor(0xFFFFFFFF);
+        cardGd.setColor(DS_CARD);
         cardGd.setCornerRadius(dp(20));
-        cardGd.setStroke(dp(1), 0xFFE8ECF4);
+        cardGd.setStroke(dp(1), DS_BORDER);
         card.setBackground(cardGd);
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(18), dp(18), dp(18), dp(18));
 
-        // 标题
+        // 标题：STATS 标签
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView tIcon = new TextView(this);
-        tIcon.setText("📊");
-        tIcon.setTextSize(16);
-        titleRow.addView(tIcon);
+        LinearLayout titleWrap = new LinearLayout(this);
+        titleWrap.setGravity(Gravity.CENTER);
+        GradientDrawable twGd = new GradientDrawable();
+        twGd.setColor(0xFF1E3A8A);
+        twGd.setCornerRadius(dp(8));
+        titleWrap.setBackground(twGd);
+        titleWrap.setPadding(dp(8), dp(4), dp(8), dp(4));
+
+        TextView ti = new TextView(this);
+        ti.setText("◆");
+        ti.setTextSize(10);
+        ti.setTextColor(DS_CTA);
+        ti.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleWrap.addView(ti);
+        titleRow.addView(titleWrap);
 
         TextView title = new TextView(this);
-        title.setText(" 统计数据");
-        title.setTextSize(15);
-        title.setTextColor(0xFF1A202C);
+        title.setText(" STATS");
+        title.setTextSize(13);
+        title.setTextColor(DS_TEXT);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         titleRow.addView(title);
         content.addView(titleRow);
@@ -1148,18 +1340,19 @@ public class MainActivity extends Activity {
         boolean hasAnyData = (hh >= 0 || rc >= 0 || lt > 0);
 
         // 列表形式：每行 = 左彩色渐变圆章 + 中文字 + 右数值
-        String[] labels = {"答案命中", "请求总数", "最近活跃"};
+        String[] labels = {"HIT_COUNT", "REQUESTS", "LAST_SEEN"};
+        String[] subLabels = {"答案命中", "请求总数", "最近活跃"};
         String[] values = {
-                hh < 0 ? "暂无数据" : String.valueOf(hh) + " 次",
-                rc < 0 ? "暂无数据" : String.valueOf(rc) + " 次",
-                lt <= 0 ? "暂无数据" : formatTime(lt)
+                hh < 0 ? "—" : String.valueOf(hh) + "x",
+                rc < 0 ? "—" : String.valueOf(rc) + "x",
+                lt <= 0 ? "—" : formatTime(lt)
         };
         int[][] colorSets = {
-                {0xFF10B981, 0xFF059669},  // 绿色
-                {0xFF3B82F6, 0xFF1D4ED8},  // 蓝色
-                {0xFF8B5CF6, 0xFF6D28D9}   // 紫色
+                {DS_CTA, DS_CTA_DARK},        // 绿色 CTA
+                {0xFF3B82F6, 0xFF1E40AF},    // 蓝色
+                {0xFF8B5CF6, 0xFF6D28D9}     // 紫色
         };
-        String[] emojis = {"🎯", "📡", "⏱"};
+        String[] emojis = {"◉", "◎", "◈"};
 
         // 列表容器
         LinearLayout listWrap = new LinearLayout(this);
@@ -1175,9 +1368,9 @@ public class MainActivity extends Activity {
             row.setGravity(Gravity.CENTER_VERTICAL);
 
             GradientDrawable rowBg = new GradientDrawable();
-            rowBg.setColor(0xFFF8FAFC);
+            rowBg.setColor(0xFF0F172A);
             rowBg.setCornerRadius(dp(14));
-            rowBg.setStroke(dp(1), 0xFFE2E8F0);
+            rowBg.setStroke(dp(1), DS_BORDER);
             row.setBackground(rowBg);
             row.setPadding(dp(12), dp(12), dp(14), dp(12));
 
@@ -1199,11 +1392,13 @@ public class MainActivity extends Activity {
             TextView cEmoji = new TextView(this);
             cEmoji.setText(emojis[i]);
             cEmoji.setTextSize(18);
+            cEmoji.setTextColor(0xFFFFFFFF);
             cEmoji.setGravity(Gravity.CENTER);
+            cEmoji.setTypeface(null, android.graphics.Typeface.BOLD);
             circleWrap.addView(cEmoji);
             row.addView(circleWrap);
 
-            // 中：标签 + 描述
+            // 中：标签 + 中文副标题
             LinearLayout textCol = new LinearLayout(this);
             textCol.setOrientation(LinearLayout.VERTICAL);
             LinearLayout.LayoutParams tcLp = new LinearLayout.LayoutParams(
@@ -1213,15 +1408,15 @@ public class MainActivity extends Activity {
 
             TextView labelTv = new TextView(this);
             labelTv.setText(labels[i]);
-            labelTv.setTextSize(14);
-            labelTv.setTextColor(0xFF1A202C);
+            labelTv.setTextSize(13);
+            labelTv.setTextColor(DS_TEXT);
             labelTv.setTypeface(null, android.graphics.Typeface.BOLD);
             textCol.addView(labelTv);
 
             TextView hintTv = new TextView(this);
-            hintTv.setText(hasAnyData ? "数据已同步" : "等待目标应用启动");
+            hintTv.setText(subLabels[i] + " · " + (hasAnyData ? "已同步" : "等待中"));
             hintTv.setTextSize(10);
-            hintTv.setTextColor(0xFF94A3B8);
+            hintTv.setTextColor(DS_TEXT_MUTED);
             LinearLayout.LayoutParams hLp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             hLp.topMargin = dp(2);
@@ -1235,9 +1430,9 @@ public class MainActivity extends Activity {
             valueBox.setOrientation(LinearLayout.VERTICAL);
             valueBox.setGravity(Gravity.CENTER);
             GradientDrawable vBg = new GradientDrawable();
-            vBg.setColor(0xFFFFFFFF);
+            vBg.setColor(DS_CARD);
             vBg.setCornerRadius(dp(10));
-            vBg.setStroke(dp(1), 0xFFE2E8F0);
+            vBg.setStroke(dp(1), DS_BORDER);
             valueBox.setBackground(vBg);
             valueBox.setPadding(dp(12), dp(8), dp(12), dp(8));
             row.addView(valueBox);
@@ -1245,7 +1440,7 @@ public class MainActivity extends Activity {
             TextView valueTv = new TextView(this);
             valueTv.setText(values[i]);
             valueTv.setTextSize(13);
-            valueTv.setTextColor(0xFF1D4ED8);
+            valueTv.setTextColor(DS_CTA);
             valueTv.setGravity(Gravity.CENTER);
             valueTv.setTypeface(null, android.graphics.Typeface.BOLD);
             valueBox.addView(valueTv);
@@ -1255,15 +1450,15 @@ public class MainActivity extends Activity {
 
         content.addView(listWrap);
 
-        // 空状态：底部小提示卡
+        // 空状态：底部小提示卡（深色主题）
         if (!hasAnyData) {
             LinearLayout tipBox = new LinearLayout(this);
             tipBox.setOrientation(LinearLayout.HORIZONTAL);
             tipBox.setGravity(Gravity.CENTER_VERTICAL);
             GradientDrawable tipGd = new GradientDrawable();
-            tipGd.setColor(0xFFFFFBF0);
+            tipGd.setColor(0xFF1E293B);
             tipGd.setCornerRadius(dp(12));
-            tipGd.setStroke(dp(1), 0xFFFDE68A);
+            tipGd.setStroke(dp(1), 0xFF334155);
             tipBox.setBackground(tipGd);
             tipBox.setPadding(dp(14), dp(12), dp(14), dp(12));
             LinearLayout.LayoutParams tipLp = new LinearLayout.LayoutParams(
@@ -1271,19 +1466,21 @@ public class MainActivity extends Activity {
             tipLp.topMargin = dp(12);
             tipBox.setLayoutParams(tipLp);
 
-            TextView ti = new TextView(this);
-            ti.setText("💡");
-            ti.setTextSize(14);
-            ti.setGravity(Gravity.CENTER);
-            tipBox.addView(ti);
+            TextView tipIcon = new TextView(this);
+            tipIcon.setText("◈");
+            tipIcon.setTextSize(12);
+            tipIcon.setTextColor(DS_CTA);
+            tipIcon.setGravity(Gravity.CENTER);
+            tipIcon.setTypeface(null, android.graphics.Typeface.BOLD);
+            tipBox.addView(tipIcon);
 
             TextView tipText = new TextView(this);
-            tipText.setText(" 请先打开目标应用，进入答题页面后返回刷新");
+            tipText.setText("  请先打开目标应用，进入答题页面后返回刷新");
             tipText.setTextSize(11);
-            tipText.setTextColor(0xFF78350F);
+            tipText.setTextColor(DS_TEXT_MUTED);
             LinearLayout.LayoutParams ttLp = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            ttLp.leftMargin = dp(6);
+            ttLp.leftMargin = dp(4);
             tipText.setLayoutParams(ttLp);
             tipBox.addView(tipText);
 
@@ -1328,14 +1525,14 @@ public class MainActivity extends Activity {
         return box;
     }
 
-    // ============ HTTP 客户端检测列表（现代化） ============
+    // ============ HTTP 客户端检测列表（深色主题） ============
     private void addHttpClientsCard(LinearLayout root, StatsData data) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable cardGd = new GradientDrawable();
-        cardGd.setColor(0xFFFFFFFF);
+        cardGd.setColor(DS_CARD);
         cardGd.setCornerRadius(dp(20));
-        cardGd.setStroke(dp(1), 0xFFE8ECF4);
+        cardGd.setStroke(dp(1), DS_BORDER);
         card.setBackground(cardGd);
 
         LinearLayout content = new LinearLayout(this);
@@ -1347,15 +1544,26 @@ public class MainActivity extends Activity {
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView tIcon = new TextView(this);
-        tIcon.setText("🔍");
-        tIcon.setTextSize(16);
-        titleRow.addView(tIcon);
+        LinearLayout titleWrap = new LinearLayout(this);
+        titleWrap.setGravity(Gravity.CENTER);
+        GradientDrawable twGd = new GradientDrawable();
+        twGd.setColor(0xFF0E7490);
+        twGd.setCornerRadius(dp(8));
+        titleWrap.setBackground(twGd);
+        titleWrap.setPadding(dp(8), dp(4), dp(8), dp(4));
+
+        TextView ti = new TextView(this);
+        ti.setText("◆");
+        ti.setTextSize(10);
+        ti.setTextColor(DS_CTA);
+        ti.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleWrap.addView(ti);
+        titleRow.addView(titleWrap);
 
         TextView title = new TextView(this);
-        title.setText(" HTTP 客户端 / 框架");
-        title.setTextSize(15);
-        title.setTextColor(0xFF1A202C);
+        title.setText(" HTTP_CLIENTS");
+        title.setTextSize(13);
+        title.setTextColor(DS_TEXT);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         titleRow.addView(title);
         content.addView(titleRow);
@@ -1371,9 +1579,9 @@ public class MainActivity extends Activity {
 
         if (!clients.isEmpty()) {
             TextView count = new TextView(this);
-            count.setText("共 " + clients.size() + " 个类已在目标应用中发现");
+            count.setText("● 已发现 " + clients.size() + " 个类");
             count.setTextSize(11);
-            count.setTextColor(0xFF10B981);
+            count.setTextColor(DS_CTA);
             count.setTypeface(null, android.graphics.Typeface.BOLD);
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1381,7 +1589,7 @@ public class MainActivity extends Activity {
             content.addView(count, cp);
 
             for (int i = 0; i < clients.size(); i++) {
-                View row = makeListItem(i + 1, clients.get(i), null, 0xFF3B82F6, false);
+                View row = makeListItem(i + 1, clients.get(i), null, 0xFF06B6D4, false);
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 lp.topMargin = dp(8);
@@ -1392,8 +1600,9 @@ public class MainActivity extends Activity {
             emptyBox.setOrientation(LinearLayout.VERTICAL);
             emptyBox.setGravity(Gravity.CENTER);
             GradientDrawable ebGd = new GradientDrawable();
-            ebGd.setColor(0xFFF8FAFC);
+            ebGd.setColor(0xFF0F172A);
             ebGd.setCornerRadius(dp(12));
+            ebGd.setStroke(dp(1), DS_BORDER);
             emptyBox.setBackground(ebGd);
             emptyBox.setPadding(dp(16), dp(16), dp(16), dp(16));
             LinearLayout.LayoutParams ebLp = new LinearLayout.LayoutParams(
@@ -1402,15 +1611,17 @@ public class MainActivity extends Activity {
             emptyBox.setLayoutParams(ebLp);
 
             TextView ei = new TextView(this);
-            ei.setText("🔎");
+            ei.setText("◯");
             ei.setTextSize(22);
+            ei.setTextColor(DS_TEXT_MUTED);
             ei.setGravity(Gravity.CENTER);
+            ei.setTypeface(null, android.graphics.Typeface.BOLD);
             emptyBox.addView(ei);
 
             TextView empty = new TextView(this);
             empty.setText("\n尚未检测到 HTTP 客户端\n\n请先打开目标应用并进入答题页面");
             empty.setTextSize(11);
-            empty.setTextColor(0xFF64748B);
+            empty.setTextColor(DS_TEXT_MUTED);
             empty.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1424,14 +1635,14 @@ public class MainActivity extends Activity {
         root.addView(card, cardParams());
     }
 
-    // ============ 最近请求记录（现代化） ============
+    // ============ 最近请求记录（深色主题） ============
     private void addRecentRequestsCard(LinearLayout root, StatsData data) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable cardGd = new GradientDrawable();
-        cardGd.setColor(0xFFFFFFFF);
+        cardGd.setColor(DS_CARD);
         cardGd.setCornerRadius(dp(20));
-        cardGd.setStroke(dp(1), 0xFFE8ECF4);
+        cardGd.setStroke(dp(1), DS_BORDER);
         card.setBackground(cardGd);
 
         LinearLayout content = new LinearLayout(this);
@@ -1443,15 +1654,26 @@ public class MainActivity extends Activity {
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView tIcon = new TextView(this);
-        tIcon.setText("📡");
-        tIcon.setTextSize(16);
-        titleRow.addView(tIcon);
+        LinearLayout titleWrap = new LinearLayout(this);
+        titleWrap.setGravity(Gravity.CENTER);
+        GradientDrawable twGd = new GradientDrawable();
+        twGd.setColor(0xFF6D28D9);
+        twGd.setCornerRadius(dp(8));
+        titleWrap.setBackground(twGd);
+        titleWrap.setPadding(dp(8), dp(4), dp(8), dp(4));
+
+        TextView ti = new TextView(this);
+        ti.setText("◆");
+        ti.setTextSize(10);
+        ti.setTextColor(DS_CTA);
+        ti.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleWrap.addView(ti);
+        titleRow.addView(titleWrap);
 
         TextView title = new TextView(this);
-        title.setText(" 最近请求记录");
-        title.setTextSize(15);
-        title.setTextColor(0xFF1A202C);
+        title.setText(" REQUEST_LOG");
+        title.setTextSize(13);
+        title.setTextColor(DS_TEXT);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         titleRow.addView(title);
         content.addView(titleRow);
@@ -1460,9 +1682,9 @@ public class MainActivity extends Activity {
 
         if (requests != null && !requests.isEmpty()) {
             TextView count = new TextView(this);
-            count.setText("共 " + requests.size() + " 条记录");
+            count.setText("● 共 " + requests.size() + " 条记录");
             count.setTextSize(11);
-            count.setTextColor(0xFF10B981);
+            count.setTextColor(DS_CTA);
             count.setTypeface(null, android.graphics.Typeface.BOLD);
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1478,9 +1700,9 @@ public class MainActivity extends Activity {
             int endIdx = Math.min(startIdx + PAGE_SIZE, requests.size());
 
             TextView rangeTv = new TextView(this);
-            rangeTv.setText("第 " + (startIdx + 1) + " - " + endIdx + " 条 / 第 " + (mCurrentPage + 1) + " 页 / 共 " + totalPages + " 页");
+            rangeTv.setText("第 " + (startIdx + 1) + "-" + endIdx + " 条 / 第 " + (mCurrentPage + 1) + " 页 / 共 " + totalPages + " 页");
             rangeTv.setTextSize(10);
-            rangeTv.setTextColor(0xFF64748B);
+            rangeTv.setTextColor(DS_TEXT_MUTED);
             LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             rlp.topMargin = dp(4);
@@ -1493,7 +1715,7 @@ public class MainActivity extends Activity {
                 if (item.type != null) {
                     if (item.type.contains("WEBVIEW")) color = 0xFF06B6D4;
                     else if (item.type.contains("OKHTTP")) color = 0xFF3B82F6;
-                    else if (item.type.contains("URL")) color = 0xFF10B981;
+                    else if (item.type.contains("URL")) color = DS_CTA;
                     else if (item.type.contains("SOCKET")) color = 0xFFEF4444;
                 }
                 View row = makeListItem(idx, item.url, item.type, color, true);
@@ -1521,8 +1743,8 @@ public class MainActivity extends Activity {
             final boolean hasPrev = mCurrentPage > 0;
             final boolean hasNext = mCurrentPage < totalPages - 1;
 
-            Button prevBtn = makeActionButton("◀ 上一页",
-                    new int[]{0xFF3B82F6, 0xFF1D4ED8}, 0xFFFFFFFF, false, false);
+            Button prevBtn = makeActionButton("◀ PREV",
+                    new int[]{DS_CTA, DS_CTA_DARK}, DS_TEXT, false, false);
             LinearLayout.LayoutParams prevLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             prevLp.rightMargin = dp(8);
             prevBtn.setLayoutParams(prevLp);
@@ -1538,15 +1760,15 @@ public class MainActivity extends Activity {
                 });
             } else {
                 GradientDrawable disabledBg = new GradientDrawable();
-                disabledBg.setColor(0xFFCBD5E1);
+                disabledBg.setColor(0xFF334155);
                 disabledBg.setCornerRadius(dp(14));
                 prevBtn.setBackground(disabledBg);
                 prevBtn.setEnabled(false);
             }
             pagerRow.addView(prevBtn);
 
-            Button nextBtn = makeActionButton("下一页 ▶",
-                    new int[]{0xFF3B82F6, 0xFF1D4ED8}, 0xFFFFFFFF, false, false);
+            Button nextBtn = makeActionButton("NEXT ▶",
+                    new int[]{DS_CTA, DS_CTA_DARK}, DS_TEXT, false, false);
             LinearLayout.LayoutParams nextLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             nextBtn.setLayoutParams(nextLp);
             if (hasNext) {
@@ -1559,7 +1781,7 @@ public class MainActivity extends Activity {
                 });
             } else {
                 GradientDrawable disabledBg = new GradientDrawable();
-                disabledBg.setColor(0xFFCBD5E1);
+                disabledBg.setColor(0xFF334155);
                 disabledBg.setCornerRadius(dp(14));
                 nextBtn.setBackground(disabledBg);
                 nextBtn.setEnabled(false);
@@ -1570,8 +1792,9 @@ public class MainActivity extends Activity {
             emptyBox.setOrientation(LinearLayout.VERTICAL);
             emptyBox.setGravity(Gravity.CENTER);
             GradientDrawable ebGd = new GradientDrawable();
-            ebGd.setColor(0xFFF8FAFC);
+            ebGd.setColor(0xFF0F172A);
             ebGd.setCornerRadius(dp(12));
+            ebGd.setStroke(dp(1), DS_BORDER);
             emptyBox.setBackground(ebGd);
             emptyBox.setPadding(dp(16), dp(16), dp(16), dp(16));
             LinearLayout.LayoutParams ebLp = new LinearLayout.LayoutParams(
@@ -1580,15 +1803,17 @@ public class MainActivity extends Activity {
             emptyBox.setLayoutParams(ebLp);
 
             TextView ei = new TextView(this);
-            ei.setText("📭");
+            ei.setText("◯");
             ei.setTextSize(22);
+            ei.setTextColor(DS_TEXT_MUTED);
             ei.setGravity(Gravity.CENTER);
+            ei.setTypeface(null, android.graphics.Typeface.BOLD);
             emptyBox.addView(ei);
 
             TextView empty = new TextView(this);
             empty.setText("\n尚未捕获任何请求\n\n请先打开目标应用并进入答题页面");
             empty.setTextSize(11);
-            empty.setTextColor(0xFF64748B);
+            empty.setTextColor(DS_TEXT_MUTED);
             empty.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1602,16 +1827,16 @@ public class MainActivity extends Activity {
         root.addView(card, cardParams());
     }
 
-    // ============ 列表行（现代化） ============
+    // ============ 列表行（深色主题） ============
     private View makeListItem(int index, String mainText, String typeLabel, int color, boolean truncate) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
 
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xFFFFFFFF);
+        bg.setColor(0xFF0F172A);
         bg.setCornerRadius(dp(12));
-        bg.setStroke(dp(1), 0xFFE2E8F0);
+        bg.setStroke(dp(1), DS_BORDER);
         row.setBackground(bg);
         row.setPadding(dp(12), dp(10), dp(12), dp(10));
 
@@ -1661,7 +1886,7 @@ public class MainActivity extends Activity {
         TextView mainTv = new TextView(this);
         mainTv.setText(displayText);
         mainTv.setTextSize(11);
-        mainTv.setTextColor(0xFF1E293B);
+        mainTv.setTextColor(DS_TEXT);
         LinearLayout.LayoutParams mtp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         if (typeLabel != null && !typeLabel.isEmpty()) mtp.topMargin = dp(2);
@@ -1671,7 +1896,7 @@ public class MainActivity extends Activity {
             TextView more = new TextView(this);
             more.setText("▸ 点击查看完整内容 (" + mainText.length() + " 字符)");
             more.setTextSize(10);
-            more.setTextColor(color);
+            more.setTextColor(DS_CTA);
             more.setTypeface(null, android.graphics.Typeface.BOLD);
             LinearLayout.LayoutParams mrp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1685,7 +1910,7 @@ public class MainActivity extends Activity {
             TextView arrow = new TextView(this);
             arrow.setText(" ›");
             arrow.setTextSize(20);
-            arrow.setTextColor(0xFF94A3B8);
+            arrow.setTextColor(DS_TEXT_MUTED);
             arrow.setGravity(Gravity.CENTER_VERTICAL);
             LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1697,24 +1922,24 @@ public class MainActivity extends Activity {
         return row;
     }
 
-    // ============ 请求详情弹窗（美化） ============
+    // ============ 请求详情弹窗（深色主题） ============
     private void showRequestDetail(RequestItem item, int index) {
-        // 颜色
-        int color = COLOR_PRIMARY;
+        int color = DS_CTA;
         if (item.type != null) {
-            if (item.type.contains("WEBVIEW")) color = COLOR_INFO;
-            else if (item.type.contains("OKHTTP")) color = COLOR_PRIMARY;
-            else if (item.type.contains("URL")) color = COLOR_ACCENT;
-            else if (item.type.contains("SOCKET")) color = COLOR_DANGER;
+            if (item.type.contains("WEBVIEW")) color = 0xFF06B6D4;
+            else if (item.type.contains("OKHTTP")) color = 0xFF3B82F6;
+            else if (item.type.contains("URL")) color = DS_CTA;
+            else if (item.type.contains("SOCKET")) color = 0xFFEF4444;
         }
 
-        // 容器（可滚动）
         ScrollView sv = new ScrollView(this);
         sv.setPadding(0, 0, 0, 0);
+        sv.setBackgroundColor(DS_BG);
 
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
         container.setPadding(dp(20), dp(16), dp(20), dp(12));
+        container.setBackgroundColor(DS_BG);
 
         // 顶部：序号 + 类型
         LinearLayout header = new LinearLayout(this);
@@ -1759,7 +1984,7 @@ public class MainActivity extends Activity {
         TextView timeLabel = new TextView(this);
         timeLabel.setText(formatFullTime(item.time));
         timeLabel.setTextSize(11);
-        timeLabel.setTextColor(COLOR_TEXT_SECONDARY);
+        timeLabel.setTextColor(DS_TEXT_MUTED);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tlp.topMargin = dp(2);
@@ -1770,36 +1995,34 @@ public class MainActivity extends Activity {
         // 分隔线
         View divider = new View(this);
         GradientDrawable dd = new GradientDrawable();
-        dd.setColor(0xFFE0E4EC);
+        dd.setColor(DS_BORDER);
         divider.setBackground(dd);
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
         dlp.bottomMargin = dp(12);
         container.addView(divider, dlp);
 
-        // "URL" 标题
         TextView urlLabel = new TextView(this);
-        urlLabel.setText("完整请求 URL");
+        urlLabel.setText("▸ 完整请求 URL");
         urlLabel.setTextSize(12);
-        urlLabel.setTextColor(COLOR_PRIMARY_DARK);
+        urlLabel.setTextColor(DS_CTA);
         urlLabel.setTypeface(null, android.graphics.Typeface.BOLD);
         LinearLayout.LayoutParams ullp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         ullp.bottomMargin = dp(8);
         container.addView(urlLabel, ullp);
 
-        // URL 内容
         TextView urlContent = new TextView(this);
         urlContent.setText(item.url != null ? item.url : "(空)");
         urlContent.setTextSize(12);
-        urlContent.setTextColor(COLOR_TEXT_PRIMARY);
+        urlContent.setTextColor(DS_TEXT);
         urlContent.setAutoLinkMask(Linkify.WEB_URLS);
         urlContent.setLinksClickable(true);
         urlContent.setLineSpacing(dp(2), 1f);
         GradientDrawable urlBox = new GradientDrawable();
-        urlBox.setColor(0xFFFAFBFC);
+        urlBox.setColor(DS_CARD);
         urlBox.setCornerRadius(dp(8));
-        urlBox.setStroke(dp(1), 0xFFE0E4EC);
+        urlBox.setStroke(dp(1), DS_BORDER);
         urlContent.setBackground(urlBox);
         urlContent.setPadding(dp(12), dp(12), dp(12), dp(12));
         LinearLayout.LayoutParams uclp = new LinearLayout.LayoutParams(
@@ -1807,17 +2030,15 @@ public class MainActivity extends Activity {
         uclp.bottomMargin = dp(10);
         container.addView(urlContent, uclp);
 
-        // 长度信息
         TextView lengthTv = new TextView(this);
         lengthTv.setText("字符长度: " + (item.url != null ? item.url.length() : 0));
         lengthTv.setTextSize(11);
-        lengthTv.setTextColor(COLOR_TEXT_SECONDARY);
+        lengthTv.setTextColor(DS_TEXT_MUTED);
         lengthTv.setGravity(Gravity.RIGHT);
         container.addView(lengthTv);
 
         sv.addView(container);
 
-        // 创建对话框
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("请求详情");
         builder.setView(sv);
@@ -1839,25 +2060,24 @@ public class MainActivity extends Activity {
         AlertDialog dialog = builder.create();
         dialog.show();
 
-        // 美化按钮颜色
         try {
             Button posBtn = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-            posBtn.setTextColor(COLOR_PRIMARY_DARK);
+            posBtn.setTextColor(DS_CTA);
             posBtn.setTextSize(13);
             Button negBtn = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
-            negBtn.setTextColor(COLOR_TEXT_SECONDARY);
+            negBtn.setTextColor(DS_TEXT_MUTED);
             negBtn.setTextSize(13);
         } catch (Throwable ignored) {}
     }
 
-    // ============ 工作原理说明卡（现代化） ============
+    // ============ 工作原理说明卡（深色主题） ============
     private void addInfoCard(LinearLayout root) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable cardGd = new GradientDrawable();
-        cardGd.setColor(0xFFFFFFFF);
+        cardGd.setColor(DS_CARD);
         cardGd.setCornerRadius(dp(20));
-        cardGd.setStroke(dp(1), 0xFFE8ECF4);
+        cardGd.setStroke(dp(1), DS_BORDER);
         card.setBackground(cardGd);
 
         LinearLayout content = new LinearLayout(this);
@@ -1869,15 +2089,26 @@ public class MainActivity extends Activity {
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView tIcon = new TextView(this);
-        tIcon.setText("💡");
-        tIcon.setTextSize(16);
-        titleRow.addView(tIcon);
+        LinearLayout titleWrap = new LinearLayout(this);
+        titleWrap.setGravity(Gravity.CENTER);
+        GradientDrawable twGd = new GradientDrawable();
+        twGd.setColor(0xFF78350F);
+        twGd.setCornerRadius(dp(8));
+        titleWrap.setBackground(twGd);
+        titleWrap.setPadding(dp(8), dp(4), dp(8), dp(4));
+
+        TextView ti = new TextView(this);
+        ti.setText("◆");
+        ti.setTextSize(10);
+        ti.setTextColor(DS_CTA);
+        ti.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleWrap.addView(ti);
+        titleRow.addView(titleWrap);
 
         TextView title = new TextView(this);
-        title.setText(" 工作原理");
-        title.setTextSize(15);
-        title.setTextColor(0xFF1A202C);
+        title.setText(" HOW_IT_WORKS");
+        title.setTextSize(13);
+        title.setTextColor(DS_TEXT);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         titleRow.addView(title);
         content.addView(titleRow);
@@ -1901,7 +2132,6 @@ public class MainActivity extends Activity {
             srlp.topMargin = dp(10);
             stepRow.setLayoutParams(srlp);
 
-            // 序号圆章
             LinearLayout numCircle = new LinearLayout(this);
             numCircle.setGravity(Gravity.CENTER);
             GradientDrawable numGd = new GradientDrawable();
@@ -1920,11 +2150,10 @@ public class MainActivity extends Activity {
             numCircle.addView(numTv);
             stepRow.addView(numCircle);
 
-            // 步骤文字
             TextView stepText = new TextView(this);
             stepText.setText(steps[i]);
             stepText.setTextSize(12);
-            stepText.setTextColor(0xFF1E293B);
+            stepText.setTextColor(DS_TEXT);
             LinearLayout.LayoutParams stlLp = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             stlLp.leftMargin = dp(12);
@@ -1939,8 +2168,9 @@ public class MainActivity extends Activity {
         tipBox.setOrientation(LinearLayout.HORIZONTAL);
         tipBox.setGravity(Gravity.CENTER_VERTICAL);
         GradientDrawable tipGd = new GradientDrawable();
-        tipGd.setColor(0xFFF0F9FF);
+        tipGd.setColor(0xFF0F172A);
         tipGd.setCornerRadius(dp(10));
+        tipGd.setStroke(dp(1), DS_BORDER);
         tipBox.setBackground(tipGd);
         tipBox.setPadding(dp(12), dp(10), dp(12), dp(10));
         LinearLayout.LayoutParams tipLp = new LinearLayout.LayoutParams(
@@ -1949,15 +2179,17 @@ public class MainActivity extends Activity {
         tipBox.setLayoutParams(tipLp);
 
         TextView tipIcon = new TextView(this);
-        tipIcon.setText("📌");
-        tipIcon.setTextSize(14);
+        tipIcon.setText("◈");
+        tipIcon.setTextSize(12);
+        tipIcon.setTextColor(DS_CTA);
         tipIcon.setGravity(Gravity.CENTER);
+        tipIcon.setTypeface(null, android.graphics.Typeface.BOLD);
         tipBox.addView(tipIcon);
 
         TextView tipTv = new TextView(this);
-        tipTv.setText(" 每页显示 " + PAGE_SIZE + " 条请求记录，点击分页按钮翻页浏览历史");
+        tipTv.setText("  每页显示 " + PAGE_SIZE + " 条请求记录，点击分页按钮翻页浏览历史");
         tipTv.setTextSize(11);
-        tipTv.setTextColor(0xFF0369A1);
+        tipTv.setTextColor(DS_TEXT_MUTED);
         LinearLayout.LayoutParams ttLp = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         ttLp.leftMargin = dp(4);
@@ -1975,9 +2207,9 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable gd = new GradientDrawable();
-        gd.setColor(COLOR_CARD);
+        gd.setColor(DS_CARD);
         gd.setCornerRadius(dp(12));
-        gd.setStroke(dp(1), 0xFFE0E4EC);
+        gd.setStroke(dp(1), DS_BORDER);
         card.setBackground(gd);
         return card;
     }
