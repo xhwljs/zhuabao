@@ -1096,29 +1096,37 @@ public class XposedInit implements IXposedHookLoadPackage {
         // l(msg)：三路日志（console.log + document.title + 内存LOG数组）
         sb.append("function l(m){try{console.log('[ANSWER]'+TAG+' '+m);}catch(e){}try{document.title=TAG+':'+String(m).substring(0,40);}catch(e){}}");
 
-        // dc(el)：终极点击。分类型处理，避免 checked=true 后 click() toggle 回 false
+        // dc(el)：终极点击。分类型处理：
+        //   - INPUT: 直接 checked=true + change 事件（不再 click，避免 toggle 回 false）
+        //   - LABEL: 找关联 input，直接设 checked=true（不依赖 label.click() 的浏览器实现）
+        //   - BUTTON/A/其他: click + dispatchEvent
         sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el||SEL_SET.indexOf(el)>=0)return;SEL_SET.push(el);SEL++;");
         sb.append("FOUND=TAG+' tag='+el.tagName+' cls='+(el.className||'')+' txt='+(el.innerText||el.value||'').toString().substring(0,30);");
         sb.append("l('★CLICK! '+FOUND);");
         sb.append("var tn=(el.tagName||'').toUpperCase();");
-        // 1) INPUT(radio/checkbox): 只checked=true + dispatch change，不再click()（click会toggle回false）
+        // 1) INPUT(radio/checkbox): 只 checked=true + dispatch change，不再 click()
         sb.append("if(tn==='INPUT'){try{el.checked=true;el.setAttribute('checked','checked');}catch(e){}");
         sb.append("try{var cevt;try{cevt=new Event('change',{bubbles:true,cancelable:true});}catch(e2){cevt=D.createEvent('HTMLEvents');cevt.initEvent('change',true,true);}el.dispatchEvent(cevt);}catch(e){}");
-        sb.append("l('DC:input done SEL='+SEL);return;}");
-        // 2) LABEL: 直接label.click()，由浏览器自动触发关联input的toggle（false→true，刚好选中）
-        sb.append("if(tn==='LABEL'){try{el.click();}catch(e){}l('DC:label done SEL='+SEL);return;}");
+        sb.append("l('DC:INPUT:checked SEL='+SEL);return;}");
+        // 2) LABEL: 找关联 input（label.for/id 或 label 内嵌套 input），直接设 checked=true
+        sb.append("if(tn==='LABEL'){var inp=null;var lf=el.getAttribute?el.getAttribute('for'):null;");
+        sb.append("if(lf){inp=D.getElementById(lf);}if(!inp&&el.querySelector){inp=el.querySelector('input');}if(inp){l('DC:LABEL→input '+inp.tagName+' id='+lf);try{inp.checked=true;inp.setAttribute('checked','checked');}catch(e){}try{var c2;try{c2=new Event('change',{bubbles:true,cancelable:true});}catch(e2){c2=D.createEvent('HTMLEvents');c2.initEvent('change',true,true);}inp.dispatchEvent(c2);}catch(e){}l('DC:LABEL:checked SEL='+SEL);return;}else{l('DC:LABEL无input,尝试click');try{el.click();}catch(e){}l('DC:LABEL:click fallback');}return;}");
         // 3) BUTTON/A/其他: click + dispatchEvent
         sb.append("try{if(el.click)el.click();}catch(e){}");
         sb.append("try{var evs=['click','mousedown','mouseup','change','input'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
         sb.append("l('DC:done SEL='+SEL);}");
 
-        // fc(el)：从元素向上找可点击的元素。找到后立即return——无论单选还是多选，都只点这一个
-        // 多选题由外部循环(for mi in mts)多次调用fc()逐个点击不同选项
+        // fc(el)：从元素向上找可点击的元素。使用 closest() API 精确查找。
+        // 找最近的 LABEL (含关联input) 或 INPUT → dc() 点击
         sb.append("function fc(el){if(!IS_MULTI&&SEL>0)return;l('FC:from '+el.tagName);");
-        sb.append("var cur=el;for(var li=0;li<25;li++){if(!cur)break;");
-        sb.append("var tn=cur.tagName;if(tn==='INPUT'||tn==='BUTTON'||tn==='LABEL'||tn==='A'||tn==='SELECT'||tn==='TEXTAREA'){l('FC:input '+tn);dc(cur);return;}");
-        sb.append("if(cur.onclick||(cur.getAttribute&&cur.getAttribute('onclick'))){l('FC:onclick '+tn);dc(cur);return;}");
-        sb.append("cur=cur.parentElement;}");
+        // 优先找最近的 LABEL
+        sb.append("var lb=el.closest?el.closest('label'):null;");
+        sb.append("if(lb){l('FC:LABEL→'+lb.tagName);dc(lb);return;}");
+        // 再找最近的 INPUT
+        sb.append("var inp=el.closest?el.closest('input,button,a,select,textarea'):null;");
+        sb.append("if(inp){l('FC:INPUT→'+inp.tagName);dc(inp);return;}");
+        // 兜底：找含onclick属性的元素
+        sb.append("var cur=el.parentElement;while(cur&&cur.tagName&&cur.tagName!=='BODY'&&cur.tagName!=='HTML'){if(cur.getAttribute&&cur.getAttribute('onclick')){l('FC:onclick→'+cur.tagName);dc(cur);return;}cur=cur.parentElement;}");
         sb.append("l('FC:fallback dc(el)');dc(el);}");
 
         // 策略1：TreeWalker 找"正确答案"标记
