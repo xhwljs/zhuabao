@@ -1141,6 +1141,23 @@ public class XposedInit implements IXposedHookLoadPackage {
         // fc(el)：从元素向上找可点击的元素。使用 closest() API 精确查找。
         // 找最近的 LABEL (含关联input) 或 INPUT → dc() 点击
         sb.append("function fc(el){if(!IS_MULTI&&SEL>0)return;l('FC:from '+el.tagName);");
+        // ============= 多选题专用（不影响单选题）=============
+        // 在 el 内部/兄弟节点/祖先链 中找 checkbox-like 元素，checked=true，不 click（避免 toggle）
+        sb.append("if(IS_MULTI){var qm='input[type=checkbox],input[type=radio],*[class*=check],*[class*=radio],*[role=checkbox],*[role=radio]';");
+        // 1) el 内部找
+        sb.append("var mf=null;try{mf=el.querySelector?el.querySelector(qm):null;}catch(e){}");
+        // 2) el 的兄弟节点中找（常见：文本和 checkbox 是兄弟）
+        sb.append("if(!mf){var pr=el.parentElement;if(pr&&pr.children){for(var bi=0;bi<pr.children.length;bi++){var s=pr.children[bi];if(s===el)continue;try{var sf=s.querySelector?s.querySelector(qm):null;if(sf){mf=sf;break;}}catch(e){}try{var sc=(s.className||'').toString();if(sc.indexOf('check')>=0||sc.indexOf('radio')>=0){mf=s;break;}}catch(e){}}}}");
+        // 3) 往上 5 层祖先链，每层内部搜
+        sb.append("if(!mf){var anc=el.parentElement;for(var lv=0;lv<5&&anc;lv++){try{var af=anc.querySelector(am);null;}catch(e){}if(anc.children){for(var ci2=0;ci2<anc.children.length;ci2++){try{var caf=anc.children[ci2].querySelector(am);if(caf){af=caf;break;}}catch(e){}}}if(af){mf=af;break;}anc=anc.parentElement;}}");
+        // 4) 找到后设 checked=true
+        sb.append("if(mf){l('FC:MULTI 找到checkbox:'+mf.tagName);");
+        sb.append("if(mf.tagName&&mf.tagName.toUpperCase()==='INPUT'){try{mf.checked=true;mf.setAttribute('checked','checked');}catch(e){}try{var cme;try{cme=new Event('change',{bubbles:true,cancelable:true});}catch(e2){cme=D.createEvent('HTMLEvents');cme.initEvent('change',true,true);}mf.dispatchEvent(cme);}catch(e){}SEL++;SEL_SET.push(mf);return;}");
+        // 自定义组件：先在内部找 input，找不到才 click
+        sb.append("var minp=null;try{minp=mf.querySelector?mf.querySelector('input[type=checkbox],input[type=radio]'):null;}catch(e){}if(minp){try{minp.checked=true;minp.setAttribute('checked','checked');}catch(e){}try{var cme2;try{cme2=new Event('change',{bubbles:true,cancelable:true});}catch(e2){cme2=D.createEvent('HTMLEvents');cme2.initEvent('change',true,true);}minp.dispatchEvent(cme2);}catch(e){}SEL++;SEL_SET.push(minp);return;}");
+        sb.append("try{if(mf.click)mf.click();}catch(e){}try{var cme3;try{cme3=new Event('change',{bubbles:true,cancelable:true});}catch(e2){cme3=D.createEvent('HTMLEvents');cme3.initEvent('change',true,true);}mf.dispatchEvent(cme3);}catch(e){}SEL++;SEL_SET.push(mf);return;}");
+        sb.append("l('FC:MULTI 未找到checkbox, fallback click el');try{if(el.click)el.click();}catch(e){}SEL++;SEL_SET.push(el);return;}");
+        // ============= 原逻辑（IS_MULTI=false，单选/判断题完全不动）=============
         // 优先找最近的 LABEL
         sb.append("var lb=el.closest?el.closest('label'):null;");
         sb.append("if(lb){l('FC:LABEL→'+lb.tagName);dc(lb);return;}");
