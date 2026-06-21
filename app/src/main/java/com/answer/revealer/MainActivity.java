@@ -142,8 +142,6 @@ public class MainActivity extends Activity {
                         data.targetHitCount = (int) value;
                     else if ("last_hook_time".equals(key))
                         data.lastHookTime = value;
-                    else if ("module_active_v1".equals(key))
-                        data.moduleActive = value > 0 || "true".equalsIgnoreCase(valueStr);
                     else if ("detected_clients".equals(key))
                         data.detectedClients = valueStr != null ? valueStr : "";
                     else if ("auto_select_enabled".equals(key)) {
@@ -174,8 +172,6 @@ public class MainActivity extends Activity {
                 }
                 if (data.lastHookTime <= 0)
                     data.lastHookTime = sp.getLong("last_hook_time", -1);
-                if (!data.moduleActive)
-                    data.moduleActive = sp.getBoolean("module_active_v1", false);
                 if (data.detectedClients == null || data.detectedClients.isEmpty())
                     data.detectedClients = sp.getString("detected_clients", "");
             } catch (Throwable ignored) {}
@@ -242,9 +238,9 @@ public class MainActivity extends Activity {
                 data.autoSelectEnabled = selfSp.getBoolean("auto_select_enabled", false);
         } catch (Throwable ignored) {}
 
-        // 5. 通过 Xposed Hook 判断是否激活
+        // 5. 通过 Xposed Hook 判断是否激活（使用 isModuleActive() 的返回值作为最终判定）
         try {
-            if (isModuleActive()) data.moduleActive = true;
+            data.moduleActive = isModuleActive();
         } catch (Throwable ignored) {}
 
         return data;
@@ -589,7 +585,7 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(16), dp(20), dp(20));
 
-        // 标题区域 - 带有图标
+        // === 标题区域 ===
         LinearLayout headerRow = new LinearLayout(this);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -597,7 +593,7 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         headerRow.setLayoutParams(headerLp);
 
-        // 设置图标背景
+        // 左侧图标背景
         LinearLayout iconWrapper = new LinearLayout(this);
         iconWrapper.setGravity(Gravity.CENTER);
         GradientDrawable iconBg = new GradientDrawable();
@@ -662,17 +658,16 @@ public class MainActivity extends Activity {
         divLp.bottomMargin = dp(14);
         content.addView(divider, divLp);
 
-        // 当前开关状态
+        // === 主开关行 ===
         final boolean[] currentState = {data != null && data.autoSelectEnabled};
 
-        // 主开关卡片行
-        final LinearLayout switchCard = new LinearLayout(this);
-        switchCard.setOrientation(LinearLayout.HORIZONTAL);
-        switchCard.setGravity(Gravity.CENTER_VERTICAL);
-        switchCard.setBackground(makeSwitchCardBg(currentState[0]));
-        switchCard.setPadding(dp(14), dp(12), dp(14), dp(12));
+        final LinearLayout switchRow = new LinearLayout(this);
+        switchRow.setOrientation(LinearLayout.HORIZONTAL);
+        switchRow.setGravity(Gravity.CENTER_VERTICAL);
+        switchRow.setBackground(makeSwitchCardBg(currentState[0]));
+        switchRow.setPadding(dp(14), dp(12), dp(14), dp(12));
 
-        // 左侧状态图标
+        // 左侧圆形状态图标
         final LinearLayout statusIconArea = new LinearLayout(this);
         statusIconArea.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(dp(46), dp(46));
@@ -686,34 +681,34 @@ public class MainActivity extends Activity {
         statusIcon.setTextColor(0xFFFFFFFF);
         statusIcon.setGravity(Gravity.CENTER);
         statusIconArea.addView(statusIcon);
-        switchCard.addView(statusIconArea);
+        switchRow.addView(statusIconArea);
 
-        // 中间文字区域
-        LinearLayout switchTextArea = new LinearLayout(this);
-        switchTextArea.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams switchTextLp = new LinearLayout.LayoutParams(
+        // 中间：标签 + 描述
+        LinearLayout textArea = new LinearLayout(this);
+        textArea.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        switchTextArea.setLayoutParams(switchTextLp);
+        textArea.setLayoutParams(textLp);
 
-        TextView switchLabel = new TextView(this);
-        switchLabel.setText("自动选中答案");
-        switchLabel.setTextSize(15);
-        switchLabel.setTextColor(COLOR_TEXT_PRIMARY);
-        switchLabel.setTypeface(null, android.graphics.Typeface.BOLD);
-        switchTextArea.addView(switchLabel);
+        TextView labelTv = new TextView(this);
+        labelTv.setText("自动选中答案");
+        labelTv.setTextSize(15);
+        labelTv.setTextColor(COLOR_TEXT_PRIMARY);
+        labelTv.setTypeface(null, android.graphics.Typeface.BOLD);
+        textArea.addView(labelTv);
 
-        final TextView switchDesc = new TextView(this);
-        switchDesc.setText(currentState[0] ? "正在监听并自动选中正确答案" : "已暂停自动选中功能");
-        switchDesc.setTextSize(12);
-        switchDesc.setTextColor(currentState[0] ? COLOR_ACCENT : COLOR_TEXT_SECONDARY);
+        final TextView descTv = new TextView(this);
+        descTv.setText(currentState[0] ? "正在监听并自动选中正确答案" : "已暂停自动选中功能");
+        descTv.setTextSize(12);
+        descTv.setTextColor(currentState[0] ? COLOR_ACCENT : COLOR_TEXT_SECONDARY);
         LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         descLp.topMargin = dp(2);
-        switchDesc.setLayoutParams(descLp);
-        switchTextArea.addView(switchDesc);
-        switchCard.addView(switchTextArea);
+        descTv.setLayoutParams(descLp);
+        textArea.addView(descTv);
+        switchRow.addView(textArea);
 
-        // 开关按钮
+        // 右侧：Switch 开关
         final android.widget.Switch toggleSwitch = new android.widget.Switch(this);
         toggleSwitch.setChecked(currentState[0]);
         toggleSwitch.setTrackTintList(android.content.res.ColorStateList.valueOf(
@@ -724,35 +719,15 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         toggleLp.leftMargin = dp(10);
         toggleSwitch.setLayoutParams(toggleLp);
-        switchCard.addView(toggleSwitch);
+        switchRow.addView(toggleSwitch);
 
-        // Switch 点击事件
-        toggleSwitch.setOnClickListener(new View.OnClickListener() {
+        // === 统一的状态切换逻辑 ===
+        final Runnable toggleState = new Runnable() {
             @Override
-            public void onClick(View v) {
-                try {
-                    ContentValues values = new ContentValues();
-                    values.put(KEY_AUTO_SELECT, toggleSwitch.isChecked());
-                    getContentResolver().update(URI_UPDATE, values, null, null);
-                    SharedPreferences sp = getSharedPreferences("module_stats", MODE_PRIVATE);
-                    sp.edit().putBoolean(KEY_AUTO_SELECT, toggleSwitch.isChecked()).apply();
-                    Toast.makeText(MainActivity.this,
-                            toggleSwitch.isChecked() ? "✓ 已开启自动选中" : "✗ 已关闭自动选中",
-                            Toast.LENGTH_SHORT).show();
-                } catch (Throwable t) {
-                    Toast.makeText(MainActivity.this, "保存失败: " + t.getMessage(), Toast.LENGTH_SHORT).show();
-                    toggleSwitch.setChecked(!toggleSwitch.isChecked());
-                }
-            }
-        });
-
-        // 整行点击事件
-        switchCard.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
+            public void run() {
                 currentState[0] = !currentState[0];
                 toggleSwitch.setChecked(currentState[0]);
-                updateSwitchCardUI(switchCard, statusIconArea, statusIcon, switchDesc, currentState[0]);
+                updateSwitchCardUI(switchRow, statusIconArea, statusIcon, descTv, currentState[0]);
                 try {
                     ContentValues values = new ContentValues();
                     values.put(KEY_AUTO_SELECT, currentState[0]);
@@ -764,102 +739,30 @@ public class MainActivity extends Activity {
                             Toast.LENGTH_SHORT).show();
                 } catch (Throwable t) {
                     Toast.makeText(MainActivity.this, "保存失败: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                    // 回滚
                     currentState[0] = !currentState[0];
                     toggleSwitch.setChecked(currentState[0]);
-                    updateSwitchCardUI(switchCard, statusIconArea, statusIcon, switchDesc, currentState[0]);
+                    updateSwitchCardUI(switchRow, statusIconArea, statusIcon, descTv, currentState[0]);
                 }
+            }
+        };
+
+        // 整行点击：触发切换
+        switchRow.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleState.run();
             }
         });
 
-        content.addView(switchCard);
+        // Switch 自身点击：也用同样逻辑（不再重复 switch.toggle，而是统一处理）
+        toggleSwitch.setClickable(false);
+        toggleSwitch.setFocusable(false);
 
-        // 支持题型区域
-        LinearLayout supportArea = new LinearLayout(this);
-        supportArea.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams supportAreaLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        supportAreaLp.topMargin = dp(16);
-        supportArea.setLayoutParams(supportAreaLp);
-
-        TextView supportTitle = new TextView(this);
-        supportTitle.setText("支持的题型");
-        supportTitle.setTextSize(12);
-        supportTitle.setTextColor(COLOR_TEXT_SECONDARY);
-        supportTitle.setTypeface(null, android.graphics.Typeface.BOLD);
-        supportArea.addView(supportTitle);
-
-        // 题型网格
-        LinearLayout typesRow = new LinearLayout(this);
-        typesRow.setOrientation(LinearLayout.HORIZONTAL);
-        typesRow.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams typesRowLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        typesRowLp.topMargin = dp(10);
-        typesRow.setLayoutParams(typesRowLp);
-
-        // 单选题卡片
-        LinearLayout typeSingle = makeTypeCard("单选题", "A B C D", COLOR_ACCENT, 0xFFE8F5E9);
-        LinearLayout.LayoutParams typeSingleLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        typeSingle.setLayoutParams(typeSingleLp);
-        typesRow.addView(typeSingle);
-
-        // 多选题卡片
-        LinearLayout typeMulti = makeTypeCard("多选题", "ABCDE", COLOR_PRIMARY, 0xFFE3F2FD);
-        LinearLayout.LayoutParams typeMultiLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        typeMultiLp.leftMargin = dp(8);
-        typeMulti.setLayoutParams(typeMultiLp);
-        typesRow.addView(typeMulti);
-
-        // 判断题卡片
-        LinearLayout typeJudge = makeTypeCard("判断题", "√ ×", COLOR_INFO, 0xFFE0F7FA);
-        LinearLayout.LayoutParams typeJudgeLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        typeJudgeLp.leftMargin = dp(8);
-        typeJudge.setLayoutParams(typeJudgeLp);
-        typesRow.addView(typeJudge);
-
-        supportArea.addView(typesRow);
-        content.addView(supportArea);
+        content.addView(switchRow);
 
         card.addView(content);
         root.addView(card, cardParams());
-    }
-
-    // ============ 创建题型卡片 ============
-    private LinearLayout makeTypeCard(String title, String options, int textColor, int bgColor) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setGravity(Gravity.CENTER);
-        card.setBackground(makeTypeCardBg(bgColor));
-        card.setPadding(dp(10), dp(10), dp(10), dp(10));
-
-        TextView titleTv = new TextView(this);
-        titleTv.setText(title);
-        titleTv.setTextSize(13);
-        titleTv.setTextColor(textColor);
-        titleTv.setTypeface(null, android.graphics.Typeface.BOLD);
-        titleTv.setGravity(Gravity.CENTER);
-        card.addView(titleTv);
-
-        TextView optionsTv = new TextView(this);
-        optionsTv.setText(options);
-        optionsTv.setTextSize(11);
-        optionsTv.setTextColor(COLOR_TEXT_SECONDARY);
-        optionsTv.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams optLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        optLp.topMargin = dp(4);
-        optionsTv.setLayoutParams(optLp);
-        card.addView(optionsTv);
-
-        return card;
-    }
-
-    // ============ 题型卡片背景 ============
-    private GradientDrawable makeTypeCardBg(int bgColor) {
-        GradientDrawable gd = new GradientDrawable();
-        gd.setColor(bgColor);
-        gd.setCornerRadius(dp(10));
-        return gd;
     }
 
     // ============ 开关卡片背景 ============
@@ -887,6 +790,17 @@ public class MainActivity extends Activity {
         statusIcon.setText(isOn ? "✓" : "✗");
         switchDesc.setText(isOn ? "正在监听并自动选中正确答案" : "已暂停自动选中功能");
         switchDesc.setTextColor(isOn ? COLOR_ACCENT : COLOR_TEXT_SECONDARY);
+        // 同步更新 Switch 的颜色
+        try {
+            Object child = switchCard.getChildAt(switchCard.getChildCount() - 1);
+            if (child instanceof android.widget.Switch) {
+                android.widget.Switch sw = (android.widget.Switch) child;
+                sw.setTrackTintList(android.content.res.ColorStateList.valueOf(
+                        isOn ? 0xFF81C784 : 0xFFE0E0E0));
+                sw.setThumbTintList(android.content.res.ColorStateList.valueOf(
+                        isOn ? 0xFFFFFFFF : 0xFFBDBDBD));
+            }
+        } catch (Throwable ignored) {}
     }
 
     // ============ 辅助方法：创建标签背景 ============
