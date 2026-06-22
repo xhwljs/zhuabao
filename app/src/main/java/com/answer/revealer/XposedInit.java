@@ -176,7 +176,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                         writeStatsToProvider(PROVIDER_URI, clients);
 
                         // Toast 提示
-                        showToastSafe("✓ 答案模块已加载");
+
                     } catch (Throwable t) {
                         // 初始化错误（已清除日志）
                     }
@@ -261,7 +261,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 updateHitCountInProvider();
 
                                 if (!modified.equals(body)) {
-                                    showToastSafe("✓ 已标记正确答案");
+
                                 }
                                 param.setResult(new ByteArrayInputStream(modified.getBytes(StandardCharsets.UTF_8)));
                             } catch (Throwable t) {
@@ -335,7 +335,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 String body = new String(responseBytes, StandardCharsets.UTF_8);
                                 String modified = modifyAnswerBodyWithStyle(body);
                                 if (!modified.equals(body)) {
-                                    showToastSafe("✓ 已标记正确答案");
+
                                 }
 
                                 // 返回修改后的响应给 WebView
@@ -415,7 +415,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 String body = new String(responseBytes, StandardCharsets.UTF_8);
                                 String modified = modifyAnswerBodyWithStyle(body);
                                 if (!modified.equals(body)) {
-                                    showToastSafe("✓ 已标记正确答案");
+
                                 }
 
                                 byte[] outBytes = modified.getBytes(StandardCharsets.UTF_8);
@@ -474,7 +474,7 @@ public class XposedInit implements IXposedHookLoadPackage {
 
                                 String body = new String(responseBytes, StandardCharsets.UTF_8);
                                 String modified = modifyAnswerBodyWithStyle(body);
-                                if (!modified.equals(body)) showToastSafe("✓ 已标记正确答案");
+
 
                                 byte[] outBytes = modified.getBytes(StandardCharsets.UTF_8);
                                 try {
@@ -524,7 +524,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                 Object newResp = buildOkHttpResponse(response, modified, contentType);
                 if (newResp != null) {
                     param.setResult(newResp);
-                    showToastSafe("✓ 已标记正确答案");
+
                 }
             }
         } catch (Throwable t) {
@@ -1051,7 +1051,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                                 btnCount = Integer.parseInt(afterTotal.trim());
                                             }
                                         } catch (Throwable ignored2) {}
-                                        showToastSafe("✓ 已选答案，扫描到 " + btnCount + " 个候选按钮，请查看 logcat [NEXTBTN] 标签");
+
                                         // 通过 XposedBridge 直接输出完整按钮信息（分段输出避免截断）
                                         try {
                                             String label = "[ANSWER_REVEALER] BUTTON_SCAN_RESULT: ";
@@ -1245,8 +1245,7 @@ public class XposedInit implements IXposedHookLoadPackage {
             sb.append("var _style_display='';try{_style_display=D.defaultView&&D.defaultView.getComputedStyle?(D.defaultView.getComputedStyle(ns[xi],null).getPropertyValue('display')):'';}catch(e){}");
             sb.append("var _style_vis='';try{_style_vis=D.defaultView&&D.defaultView.getComputedStyle?(D.defaultView.getComputedStyle(ns[xi],null).getPropertyValue('visibility')):'';}catch(e){}");
             sb.append("var _rect_w=0;var _rect_h=0;try{var _r=ns[xi].getBoundingClientRect();_rect_w=Math.round(_r.width);_rect_h=Math.round(_r.height);}catch(e){}");
-            // 打印到 console.log（LSPosed hook onConsoleMessage 捕获）
-            sb.append("try{console.log('[NEXTBTN] idx='+xi+' tag='+_tag+' txt='+_t+' cls='+_cls+' id='+_id+' role='+_role+' onclick='+_onclick+' w='+_rect_w+' h='+_rect_h+' disp='+_style_display+' vis='+_style_vis);}catch(e){}");
+
             sb.append("NLOG=NLOG+'{'+'['+xi+']'+_tag+' txt='+_t+' cls='+_cls+' id='+_id+' onclick='+_onclick+' w='+_rect_w+' h='+_rect_h+'}';");
             sb.append("}catch(e){NLOG=NLOG+'[ERR'+xi+']'+e.message;}}");
             sb.append("}catch(e){NLOG=NLOG+'SCAN_ERR:'+e.message;}");
@@ -1261,15 +1260,13 @@ public class XposedInit implements IXposedHookLoadPackage {
             sb.append("var _xid=(all_n[yi].id||'').toString().substring(0,40);");
             sb.append("var _xonclick=all_n[yi].getAttribute&&all_n[yi].getAttribute('onclick')?all_n[yi].getAttribute('onclick').substring(0,80):'';");
             sb.append("var _xw=0;var _xh=0;try{var _xr=all_n[yi].getBoundingClientRect();_xw=Math.round(_xr.width);_xh=Math.round(_xr.height);}catch(e){}");
-            sb.append("try{console.log('[NEXTBTN_EXTRA] tag='+_xtag+' txt='+xt+' cls='+_xcls+' id='+_xid+' onclick='+_xonclick+' w='+_xw+' h='+_xh);}catch(e){}");
+
             sb.append("_extra=_extra+'{'+_xtag+' txt='+xt+' cls='+_xcls+' id='+_xid+' onclick='+_xonclick+' w='+_xw+' h='+_xh+'}';_ecount++;if(_ecount>=20)break;");
             sb.append("}}catch(e){}}NLOG=NLOG+'|EXTRA('+_ecount+'):'+_extra;}catch(e){NLOG=NLOG+'EXTRA_ERR:'+e.message;}");
             // 3. 深度扫描：直接搜 className 中含 btn/next 的所有元素（不限标签）
-            sb.append("try{var _deep=[];var _all2=D.body.querySelectorAll('*');for(var zi=0;zi<_all2.length&&zi<500;zi++){try{var _c2=(String(_all2[zi].className||''));if(_c2.indexOf('btn')>=0||_c2.indexOf('next')>=0||_c2.indexOf('footer')>=0||_c2.indexOf('box')>=0){var _zt=(_all2[zi].innerText||_all2[zi].textContent||'').replace(/\\s+/g,' ').trim();var _ztag=(_all2[zi].tagName||'').toUpperCase();var _zid=(_all2[zi].id||'').toString();var _zw2=0;var _zh2=0;try{var _zr=_all2[zi].getBoundingClientRect();_zw2=Math.round(_zr.width);_zh2=Math.round(_zr.height);}catch(e){}try{console.log('[NEXTBTN_DEEP] tag='+_ztag+' txt='+_zt+' cls='+_c2+' id='+_zid+' w='+_zw2+' h='+_zh2);}catch(e){}_deep.push(_ztag+'_'+_zt+'_cls='+_c2+'_id='+_zid+'_w='+_zw2+'_h='+_zh2);}}catch(e){}}NLOG=NLOG+'|DEEP('+_deep.length+'):'+_deep.slice(0,20).join('|');}catch(e){NLOG=NLOG+'DEEP_ERR:'+e.message;}");
-            // 4. 写入 document.title
+            sb.append("try{var _deep=[];var _all2=D.body.querySelectorAll('*');for(var zi=0;zi<_all2.length&&zi<500;zi++){try{var _c2=(String(_all2[zi].className||''));if(_c2.indexOf('btn')>=0||_c2.indexOf('next')>=0||_c2.indexOf('footer')>=0||_c2.indexOf('box')>=0){var _zt=(_all2[zi].innerText||_all2[zi].textContent||'').replace(/\\s+/g,' ').trim();var _ztag=(_all2[zi].tagName||'').toUpperCase();var _zid=(_all2[zi].id||'').toString();var _zw2=0;var _zh2=0;try{var _zr=_all2[zi].getBoundingClientRect();_zw2=Math.round(_zr.width);_zh2=Math.round(_zr.height);}catch(e){}_deep.push(_ztag+'_'+_zt+'_cls='+_c2+'_id='+_zid+'_w='+_zw2+'_h='+_zh2);}}catch(e){}}NLOG=NLOG+'|DEEP('+_deep.length+'):'+_deep.slice(0,20).join('|');}catch(e){NLOG=NLOG+'DEEP_ERR:'+e.message;}");
+            // 4. 写入 document.title（用于调试）
             sb.append("try{var _title='[AR]'+(new Date().toLocaleTimeString())+' SEL='+SEL+' BTN='+(ns?ns.length:0);document.title=_title;}catch(e){}");
-            // 5. 汇总 console.log
-            sb.append("try{console.log('[ANSWER_RESULT] SEL='+SEL+' '+NLOG.substring(0,Math.min(NLOG.length,2000)));}catch(e){}");
         }
 
         // === 关键：在 try 块内返回明确格式的字符串！===
@@ -1281,7 +1278,7 @@ public class XposedInit implements IXposedHookLoadPackage {
         }
 
         // 捕获异常后也返回字符串（失败情况）
-        sb.append("}catch(e){try{console.log('[ANSWER]'+TAG+' TOPERR:'+e.message);}catch(e2){}try{document.title='[ERR]'+TAG+':'+e.message;}catch(e2){}");
+        sb.append("}catch(e){try{document.title='[ERR]'+TAG+':'+e.message;}catch(e2){}");
         sb.append("return '[ANSWER]EXCEPTION|'+TAG+'|err='+e.message;");
         sb.append("}})();");
         return sb.toString();
@@ -1294,7 +1291,7 @@ public class XposedInit implements IXposedHookLoadPackage {
             // 方式1: performClick
             try {
                 if (view.performClick()) {
-                    showToastSafe("✓ [" + source + "] 自动选中");
+
                     return true;
                 }
             } catch (Throwable ignored) {}
@@ -1310,7 +1307,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                         (float) view.getWidth() / 2, (float) view.getHeight() / 2, 0);
                 XposedHelpers.callMethod(view, "dispatchTouchEvent", downEvent);
                 XposedHelpers.callMethod(view, "dispatchTouchEvent", upEvent);
-                showToastSafe("✓ [" + source + "] 自动选中");
+
                 return true;
             } catch (Throwable ignored) {}
 
@@ -1503,20 +1500,6 @@ public class XposedInit implements IXposedHookLoadPackage {
         }).start();
     }
 
-    // ============ Toast ============
-    private static void showToastSafe(final String message) {
-        new Handler(Looper.getMainLooper()).post(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
-                    if (ctx != null) {
-                        Toast.makeText(ctx, message, Toast.LENGTH_SHORT).show();
-                    }
-                } catch (Throwable ignored) {}
-            }
-        });
-    }
 
     // ============ 暴露给外部读取（调试用） ============
     public static int getTargetHitCount() { return targetHitCounter.get(); }

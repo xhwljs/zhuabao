@@ -81,10 +81,10 @@ public class StatsProvider extends ContentProvider {
     public boolean onCreate() {
         try {
             mSP = getContext().getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
-            Log.d(TAG, "StatsProvider created, package=" + getContext().getPackageName());
+
             return true;
         } catch (Throwable t) {
-            Log.e(TAG, "onCreate error: " + t.getMessage());
+
             return false;
         }
     }
@@ -162,7 +162,7 @@ public class StatsProvider extends ContentProvider {
                         }
                         editor.putBoolean(KEY_AUTO_SELECT, targetSp.getBoolean(KEY_AUTO_SELECT, false));
                         editor.apply();
-                        Log.d(TAG, "从目标应用 SP 同步数据到模块 SP: request_count=" + requestCount);
+
                     }
                 }
             } catch (Throwable ignored) {}
@@ -198,7 +198,7 @@ public class StatsProvider extends ContentProvider {
 
             return cursor;
         } catch (Throwable t) {
-            Log.e(TAG, "query error: " + t.getMessage());
+
             return emptyCursor();
         }
     }
@@ -241,7 +241,7 @@ public class StatsProvider extends ContentProvider {
             try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
             return uri;
         } catch (Throwable t) {
-            Log.e(TAG, "insert error: " + t.getMessage());
+
             return null;
         }
     }
@@ -281,7 +281,7 @@ public class StatsProvider extends ContentProvider {
             }
             return 0;
         } catch (Throwable t) {
-            Log.e(TAG, "delete error: " + t.getMessage());
+
             return 0;
         }
     }
@@ -295,10 +295,10 @@ public class StatsProvider extends ContentProvider {
             if (updated > 0) {
                 try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
             }
-            Log.d(TAG, "update: keys=" + values.keySet() + ", updated=" + updated);
+
             return updated;
         } catch (Throwable t) {
-            Log.e(TAG, "update error: " + t.getMessage());
+
             return 0;
         }
     }
@@ -332,7 +332,7 @@ public class StatsProvider extends ContentProvider {
             mSP = getContext().getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
             return mSP;
         } catch (Throwable t) {
-            Log.e(TAG, "ensureSP error: " + t.getMessage());
+
             return null;
         }
     }
