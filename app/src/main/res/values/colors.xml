@@ -1,16 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 亮色主题基础色 -->
     <color name="primary">#2196F3</color>
     <color name="primary_dark">#1565C0</color>
     <color name="accent">#4CAF50</color>
-    <color name="answer_highlight">#4CAF50</color>
-    <color name="text_primary">#212121</color>
-    <color name="text_secondary">#5C6674</color>
+    <color name="accent_yellow">#FF9800</color>
+    <color name="accent_violet">#9C27B0</color>
+    <color name="error">#F44336</color>
+
+    <!-- 启动窗口背景（避免白屏） -->
+    <color name="window_bg">#F5F7FA</color>
+    <color name="status_bar">#E8ECF0</color>
+    <color name="nav_bar">#F5F7FA</color>
+
+    <!-- 亮色卡片/文字 -->
     <color name="bg_card">#FFFFFF</color>
+    <color name="bg_card_soft">#F0F4F8</color>
+    <color name="text_primary">#1A1A2E</color>
+    <color name="text_secondary">#5C6674</color>
+    <color name="text_muted">#8E9AAF</color>
     <color name="divider">#E0E4EC</color>
+    <color name="border">#D0D7E0</color>
+
+    <!-- 图标背景 -->
     <color name="icon_bg_blue">#E3F2FD</color>
     <color name="icon_bg_green">#E8F5E9</color>
     <color name="icon_bg_orange">#FFF3E0</color>
     <color name="icon_bg_cyan">#E0F7FA</color>
-    <color name="card_border">#FFE0E4EC</color>
+    <color name="icon_bg_violet">#F3E5F5</color>
+
+    <!-- 状态卡片渐变 -->
+    <color name="status_active_start">#4CAF50</color>
+    <color name="status_active_end">#2E7D32</color>
+    <color name="status_inactive_start">#BDBDBD</color>
+    <color name="status_inactive_end">#9E9E9E</color>
+    <color name="status_auto_start">#2196F3</color>
+    <color name="status_auto_end">#1565C0</color>
+    <color name="status_next_start">#FF9800</color>
+    <color name="status_next_end">#F57C00</color>
+
+    <!-- 答案高亮 -->
+    <color name="answer_highlight">#4CAF50</color>
 </resources>
