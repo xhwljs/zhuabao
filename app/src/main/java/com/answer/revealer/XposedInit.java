@@ -1035,17 +1035,37 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     // 如果 JS 返回值中显示成功选中，立即标记
                                     if (valStr.contains("SUCCESS") || valStr.contains("SEL=1")) {
                                         sAlreadyAutoSelected.set(true);
-                                        // 如果启用了自动下一题，显示提示
-                                        if (autoNext) {
-                                            // 从返回值中提取 NEXT= 信息
-                                            int idx = valStr.indexOf("|NEXT=");
-                                            String nextInfo = idx >= 0 ? valStr.substring(idx + 6) : "";
-                                            if (nextInfo.contains("NEXT") || nextInfo.contains("下题")) {
-                                                showToastSafe("✓ 已选答案，稍后自动进入下一题");
-                                            } else if (nextInfo.contains("STOP") || nextInfo.contains("交卷")) {
-                                                showToastSafe("⚠ 已到达最后一题，未自动点击交卷");
+                                        // ============ 调试模式：仅 Toast 提示 + 输出 BUTTONS= 信息到 logcat ============
+                                        // 从返回值中提取 BUTTONS= 段（包含所有候选按钮的 tag/class/id/text/onclick 等）
+                                        int bidx = valStr.indexOf("|BUTTONS=");
+                                        String buttonsInfo = bidx >= 0 ? valStr.substring(bidx + 9) : "";
+                                        // 统计候选按钮数量
+                                        int btnCount = 0;
+                                        try {
+                                            String totalPrefix = "TOTAL=";
+                                            int tidx = buttonsInfo.indexOf(totalPrefix);
+                                            if (tidx >= 0) {
+                                                String afterTotal = buttonsInfo.substring(tidx + totalPrefix.length());
+                                                int pipeIdx = afterTotal.indexOf("|");
+                                                if (pipeIdx >= 0) afterTotal = afterTotal.substring(0, pipeIdx);
+                                                btnCount = Integer.parseInt(afterTotal.trim());
                                             }
-                                        }
+                                        } catch (Throwable ignored2) {}
+                                        showToastSafe("✓ 已选答案，扫描到 " + btnCount + " 个候选按钮，请查看 logcat [NEXTBTN] 标签");
+                                        // 通过 XposedBridge 直接输出完整按钮信息（分段输出避免截断）
+                                        try {
+                                            String label = "[ANSWER_REVEALER] BUTTON_SCAN_RESULT: ";
+                                            // 截断为多段，防止 logcat 一行过长
+                                            int maxLen = 2000;
+                                            if (buttonsInfo.length() <= maxLen) {
+                                                XposedBridge.log(label + buttonsInfo);
+                                            } else {
+                                                XposedBridge.log(label + "(TOTAL_LEN=" + buttonsInfo.length() + ")");
+                                                for (int p = 0; p < buttonsInfo.length(); p += maxLen) {
+                                                    XposedBridge.log(label + "[" + (p / maxLen + 1) + "/" + ((buttonsInfo.length() + maxLen - 1) / maxLen) + "] " + buttonsInfo.substring(p, Math.min(p + maxLen, buttonsInfo.length())));
+                                                }
+                                            }
+                                        } catch (Throwable ignored2) {}
                                     }
                                 } catch (Throwable ignored) {}
                                 return null;
@@ -1204,44 +1224,55 @@ public class XposedInit implements IXposedHookLoadPackage {
 
         sb.append("l('v8 done SEL='+SEL);");
 
-        // ============ 自动下一题：DOM 扫描 + 随机延迟点击 ============
-        // 关键词：找所有可点击元素中 innerText 含"下一题"、"下一页"、"下一题"等
-        // 排除：含"交卷"、"提交"、"完成"的按钮（避免提前交卷）
-        sb.append("var NEXT_KW=['下一题','下一页','下一个','下题','Next','next','›','»'];");
-        sb.append("var STOP_KW=['交卷','提交','完成','已完成','Finish','finish'];");
-        sb.append("var NFOUND='';");
-        sb.append("var NBTN=null;");
-        // 扫描策略：优先 BUTTON/A 标签，其次 role=button，最后所有带 onclick 或 clickable 的元素
-        sb.append("function matchKw(t,kwArr){if(!t)return false;for(var yi=0;yi<kwArr.length;yi++){if(t.indexOf(kwArr[yi])>=0)return true;}return false;}");
-        sb.append("if(SEL>0){try{");
-        sb.append("var nq=D.querySelectorAll('button,a,div[onclick],span[onclick],*[role=button]');");
-        sb.append("for(var qi=0;qi<nq.length;qi++){var qt='';try{qt=(nq[qi].innerText||nq[qi].textContent||nq[qi].value||'').toString().trim();}catch(e){}if(!qt||qt.length>20)continue;");
-        sb.append("if(matchKw(qt,STOP_KW)){NFOUND='STOP:'+qt+' tag='+nq[qi].tagName;break;}if(matchKw(qt,NEXT_KW)){NBTN=nq[qi];NFOUND='NEXT:'+qt+' tag='+nq[qi].tagName+' cls='+(nq[qi].className||'').substring(0,40);break;}}");
-        sb.append("}catch(e){NFOUND='ERR:'+e.message;}");
-        // 兜底：再扫一次所有元素，找与"题"、"页"相关的
-        sb.append("if(!NBTN){try{var nq2=D.body.querySelectorAll('*');for(var qj=0;qj<nq2.length;qj++){var qt2='';try{qt2=(nq2[qj].innerText||nq2[qj].textContent||'').toString().trim();}catch(e){}if(!qt2||qt2.length>20||qt2.length<2)continue;if(matchKw(qt2,STOP_KW)){NFOUND='STOP:'+qt2;break;}if(matchKw(qt2,NEXT_KW)){NBTN=nq2[qj];NFOUND='NEXT2:'+qt2+' tag='+nq2[qj].tagName;break;}}}catch(e){}}");
-        sb.append("}");
-        // 输出调试信息（通过 document.title 变化让 Java 层可观察）
-        sb.append("try{var dbg='[AR]SEL='+SEL+' NB='+(NBTN?'YES':'NO')+' '+NFOUND;document.title=dbg;}catch(e){}");
-        // 如果启用自动下一题 + 找到下一题按钮 + 不是交卷按钮：随机延迟后点击
+        // ============ 调试：扫描下一题/交卷按钮（仅输出日志，不做任何点击）============
+        // 目的：通过 LSPosed 的 logcat 和 document.title 确定按钮的真实类型(tagName/class/id/text/onclick 等)
+        // 拿到这些信息后再实现自动下一题
+        // 仅当 autoNext=true(用户在模块 UI 打开"自动下一题"开关)时执行扫描
         if (autoNext) {
-            sb.append("if(SEL>0&&NBTN&&NFOUND&&NFOUND.indexOf('STOP')<0){");
-            // 2000~5000 毫秒随机延迟（模拟真实答题速度）
-            sb.append("var _delay=2000+Math.floor(Math.random()*3000);");
-            sb.append("setTimeout(function(){try{");
-            // 先检查按钮是否仍可见
-            sb.append("var _vis=false;try{var _rec=NBTN.getBoundingClientRect();_vis=(_rec&&_rec.width>0&&_rec.height>0);}catch(e){_vis=true;}if(!_vis)return;");
-            // 终极点击：优先 click()，失败则 dispatch MouseEvent
-            sb.append("try{NBTN.click();}catch(e){}");
-            sb.append("try{var _evt=new MouseEvent('click',{bubbles:true,cancelable:true,view:window,button:0});NBTN.dispatchEvent(_evt);}catch(e){try{var _evt2=D.createEvent('MouseEvents');_evt2.initEvent('click',true,true);NBTN.dispatchEvent(_evt2);}catch(e2){}}");
-            sb.append("try{document.title='[AR]CLICKED NEXT delay='+_delay;}catch(e){}");
-            sb.append("}catch(e){try{document.title='[AR]NEXT ERR:'+e.message;}catch(e2){}}},_delay);");
-            sb.append("}");
+            sb.append("var NLOG='';");
+            sb.append("try{");
+            // 1. 扫描常见的可点击元素
+            sb.append("var ns=D.querySelectorAll('button,a,div[onclick],span[onclick],*[role=button],input[type=button],input[type=submit]');");
+            sb.append("NLOG=NLOG+'TOTAL='+ns.length+'|';");
+            sb.append("for(var xi=0;xi<ns.length;xi++){try{");
+            sb.append("var _t=(ns[xi].innerText||ns[xi].textContent||ns[xi].value||'').toString().trim();");
+            sb.append("var _cls=(ns[xi].className||'').toString().substring(0,60);");
+            sb.append("var _id=(ns[xi].id||'').toString().substring(0,40);");
+            sb.append("var _tag=(ns[xi].tagName||'').toString().toUpperCase();");
+            sb.append("var _onclick=ns[xi].getAttribute&&ns[xi].getAttribute('onclick')?ns[xi].getAttribute('onclick').substring(0,80):'';");
+            sb.append("var _role=ns[xi].getAttribute&&ns[xi].getAttribute('role')?ns[xi].getAttribute('role'):'';");
+            sb.append("var _style_display='';try{_style_display=D.defaultView&&D.defaultView.getComputedStyle?(D.defaultView.getComputedStyle(ns[xi],null).getPropertyValue('display')):'';}catch(e){}");
+            sb.append("var _style_vis='';try{_style_vis=D.defaultView&&D.defaultView.getComputedStyle?(D.defaultView.getComputedStyle(ns[xi],null).getPropertyValue('visibility')):'';}catch(e){}");
+            sb.append("var _rect_w=0;var _rect_h=0;try{var _r=ns[xi].getBoundingClientRect();_rect_w=Math.round(_r.width);_rect_h=Math.round(_r.height);}catch(e){}");
+            sb.append("NLOG=NLOG+'{'+'['+xi+']'+_tag+' txt='+_t+' cls='+_cls+' id='+_id+' role='+_role+' onclick='+_onclick+' disp='+_style_display+' vis='+_style_vis+' w='+_rect_w+' h='+_rect_h+'}';");
+            // 打印到 console.log（通过 hook WebChromeClient.onConsoleMessage 捕获到 logcat）
+            sb.append("try{console.log('[NEXTBTN] idx='+xi+' tag='+_tag+' txt='+_t+' cls='+_cls+' id='+_id+' role='+_role+' onclick='+_onclick+' w='+_rect_w+' h='+_rect_h);}catch(e){}");
+            sb.append("}catch(e){NLOG=NLOG+'[ERR'+xi+']'+e.message;}}");
+            sb.append("}catch(e){NLOG=NLOG+'SCAN_ERR:'+e.message;}");
+            // 2. 兜底：扫所有元素中含关键词的
+            sb.append("try{var all_n=D.body.querySelectorAll('*');var _extra='';for(var yi=0;yi<all_n.length&&yi<300;yi++){try{");
+            sb.append("var xt=(all_n[yi].innerText||all_n[yi].textContent||'').toString().trim();");
+            sb.append("if(!xt||xt.length>20||xt.length<2)continue;");
+            sb.append("if(xt.indexOf('下一题')>=0||xt.indexOf('下一页')>=0||xt.indexOf('交卷')>=0||xt.indexOf('提交')>=0||xt.indexOf('完成')>=0||xt.indexOf('下题')>=0){");
+            sb.append("var _xtag=(all_n[yi].tagName||'').toString().toUpperCase();");
+            sb.append("var _xcls=(all_n[yi].className||'').toString().substring(0,60);");
+            sb.append("var _xid=(all_n[yi].id||'').toString().substring(0,40);");
+            sb.append("_extra=_extra+'['+_xtag+' txt='+xt+' cls='+_xcls+' id='+_xid+']';");
+            sb.append("try{console.log('[NEXTBTN_EXTRA] tag='+_xtag+' txt='+xt+' cls='+_xcls+' id='+_xid);}catch(e){}");
+            sb.append("}}catch(e){}}NLOG=NLOG+'|EXTRA:'+_extra;}catch(e){NLOG=NLOG+'EXTRA_ERR:'+e.message;}");
+            // 3. 写入 document.title
+            sb.append("try{var _title='[AR]'+(new Date().toLocaleTimeString())+' SEL='+SEL+' BTN='+(ns?ns.length:0);document.title=_title;}catch(e){}");
+            // 4. 汇总 console.log
+            sb.append("try{console.log('[ANSWER_RESULT] SEL='+SEL+' '+NLOG.substring(0,Math.min(NLOG.length,2000)));}catch(e){}");
         }
 
         // === 关键：在 try 块内返回明确格式的字符串！===
         // 这是 evaluateJavascript 的 ValueCallback 会捕获的值
-        sb.append("return(SEL>0?'[ANSWER]SUCCESS|'+TAG+'|SEL='+SEL+'|FOUND='+FOUND+'|NEXT='+NFOUND:'[ANSWER]FAIL|'+TAG+'|SEL=0|未找到可点击元素');");
+        if (autoNext) {
+            sb.append("return(SEL>0?'[ANSWER]SUCCESS|'+TAG+'|SEL='+SEL+'|FOUND='+FOUND+'|BUTTONS='+NLOG.substring(0,Math.min(NLOG.length,2000)):'[ANSWER]FAIL|'+TAG+'|SEL=0|BUTTONS='+NLOG.substring(0,Math.min(NLOG.length,2000)));");
+        } else {
+            sb.append("return(SEL>0?'[ANSWER]SUCCESS|'+TAG+'|SEL='+SEL+'|FOUND='+FOUND:'[ANSWER]FAIL|'+TAG+'|SEL=0);");
+        }");
 
         // 捕获异常后也返回字符串（失败情况）
         sb.append("}catch(e){try{console.log('[ANSWER]'+TAG+' TOPERR:'+e.message);}catch(e2){}try{document.title='[ERR]'+TAG+':'+e.message;}catch(e2){}");

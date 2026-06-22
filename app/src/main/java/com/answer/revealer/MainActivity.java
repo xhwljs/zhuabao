@@ -1004,12 +1004,12 @@ public class MainActivity extends Activity {
         row1Lp.topMargin = dp(14);
         content.addView(row1, row1Lp);
 
-        // ========== 列表项 1.5：自动下一题开关 ==========
+        // ========== 列表项 1.5：自动下一题（调试模式）==========
         final boolean autoNextOn = data != null && data.autoNextEnabled;
         LinearLayout rowNext = buildActionRowV3(
                 "»", DS_YELLOW, 0xFFD97706,
-                "自动下一题",
-                autoNextOn ? "已开启，选完答案后自动点击下一题（含随机延迟）" : "点击右侧开关开启此功能（建议先开启自动答题）",
+                "自动下一题(调试)",
+                autoNextOn ? "调试中：扫描页面按钮类型输出到 logcat（不做点击）" : "点击右侧开关开启按钮扫描调试",
                 autoNextOn,
                 new View.OnClickListener() {
                     @Override
@@ -1027,7 +1027,7 @@ public class MainActivity extends Activity {
                             sp.edit().putBoolean("auto_next_enabled", !autoNextOn).apply();
                         } catch (Throwable ignored) {}
                         Toast.makeText(MainActivity.this,
-                                !autoNextOn ? "✓ 自动下一题已开启" : "自动下一题已关闭",
+                                !autoNextOn ? "✓ 按钮扫描已开启（调试模式）" : "按钮扫描已关闭",
                                 Toast.LENGTH_SHORT).show();
                         refreshStatsAsync();
                     }
