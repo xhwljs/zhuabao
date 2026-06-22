@@ -1226,34 +1226,43 @@ public class MainActivity extends Activity {
         if (maxVal < 10) maxVal = 10;
 
         // ============ 条目 1：命中次数 ============
-        content.addView(buildStatRowV3(
+        View row1 = buildStatRowV3(
                 "📊", "命中次数",
                 hh < 0 ? "—" : String.valueOf(hh),
                 "答题题目命中次数",
                 DS_ACCENT, DS_VIOLET,
-                hh < 0 ? 0 : (float) hh / maxVal));
+                hh < 0 ? 0 : (float) hh / maxVal);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rlp.topMargin = dp(14);
+        row1.setLayoutParams(rlp);
+        content.addView(row1);
 
         // ============ 条目 2：请求总数 ============
-        content.addView(buildStatRowV3(
+        View row2 = buildStatRowV3(
                 "🌐", "请求总数",
                 rc < 0 ? "—" : String.valueOf(rc),
                 "已拦截的 HTTP 请求数量",
                 DS_BLUE, DS_BLUE_DARK,
-                rc < 0 ? 0 : (float) rc / maxVal));
+                rc < 0 ? 0 : (float) rc / maxVal);
+        LinearLayout.LayoutParams r2lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        r2lp.topMargin = dp(10);
+        row2.setLayoutParams(r2lp);
+        content.addView(row2);
 
         // ============ 条目 3：最近活跃 ============
-        LinearLayout timeRow = buildStatRowV3(
+        View row3 = buildStatRowV3(
                 "⏰", "最近活跃",
                 lt <= 0 ? "—" : formatTime(lt),
                 "最后一次 Hook 时间",
                 DS_YELLOW, 0xFFD97706,
                 lt > 0 ? 1.0f : 0.0f);
-        LinearLayout.LayoutParams lp3 = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams r3lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp3.topMargin = dp(10);
-        // 直接添加列表
-        // 注：前两行添加时没有设置 topMargin，buildStatRowV3 内部没设置 margin
-        // 因为时间条的布局参数直接通过 addView 设置会比较复杂，这里简化处理
+        r3lp.topMargin = dp(10);
+        row3.setLayoutParams(r3lp);
+        content.addView(row3);
 
         // === 空状态提示（如所有数据为空时显示） ===
         if (!hasAnyData) {
