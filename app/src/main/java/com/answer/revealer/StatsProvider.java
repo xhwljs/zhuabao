@@ -52,6 +52,7 @@ public class StatsProvider extends ContentProvider {
     public static final String KEY_DETECTED_CLIENTS = "detected_clients";
     public static final String KEY_PKG_HOOKED = "package_hooked";
     public static final String KEY_AUTO_SELECT = "auto_select_enabled";
+    public static final String KEY_AUTO_NEXT = "auto_next_enabled";
     public static final String KEY_ANSWER_TEXT = "answer_text";
     public static final String KEY_ANSWER_MARKED = "answer_marked_text";
 
@@ -62,7 +63,8 @@ public class StatsProvider extends ContentProvider {
             KEY_MODULE_ACTIVE,
             KEY_DETECTED_CLIENTS,
             KEY_PKG_HOOKED,
-            KEY_AUTO_SELECT
+            KEY_AUTO_SELECT,
+            KEY_AUTO_NEXT
     };
 
     // 目标应用包名 - 用于 fallback 读取其 SP
@@ -185,7 +187,7 @@ public class StatsProvider extends ContentProvider {
                 if (KEY_DETECTED_CLIENTS.equals(key) || KEY_PKG_HOOKED.equals(key)) {
                     String v = sp.getString(key, "");
                     cursor.newRow().add(key).add((long) (v == null || v.isEmpty() ? 0 : v.split("\n").length)).add(v == null ? "" : v);
-                } else if (KEY_MODULE_ACTIVE.equals(key) || KEY_AUTO_SELECT.equals(key)) {
+                } else if (KEY_MODULE_ACTIVE.equals(key) || KEY_AUTO_SELECT.equals(key) || KEY_AUTO_NEXT.equals(key)) {
                     long v = sp.getBoolean(key, false) ? 1L : 0L;
                     cursor.newRow().add(key).add(v).add(String.valueOf(v));
                 } else {
@@ -254,11 +256,15 @@ public class StatsProvider extends ContentProvider {
             if ("clear".equals(path)) {
                 // 清空统计数据，但保留用户设置（如自动答题开关）
                 boolean savedAutoSelect = sp.getBoolean(KEY_AUTO_SELECT, false);
+                boolean savedAutoNext = sp.getBoolean(KEY_AUTO_NEXT, false);
                 int count = sp.getAll().size();
                 sp.edit().clear().apply();
-                // 恢复自动答题状态
+                // 恢复用户设置
                 if (savedAutoSelect) {
                     sp.edit().putBoolean(KEY_AUTO_SELECT, savedAutoSelect).apply();
+                }
+                if (savedAutoNext) {
+                    sp.edit().putBoolean(KEY_AUTO_NEXT, savedAutoNext).apply();
                 }
                 try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
                 return count;

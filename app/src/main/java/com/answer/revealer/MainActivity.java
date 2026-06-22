@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
 
     // 配置项 key
     private static final String KEY_AUTO_SELECT = "auto_select_enabled";
+    private static final String KEY_AUTO_NEXT = "auto_next_enabled";
 
     // ============ UI/UX Pro Max 设计系统 V2 ============
     // Pattern: Playful Warmth | Style: Soft Gradient + Pastel (完全推翻前版)
@@ -127,6 +128,8 @@ public class MainActivity extends Activity {
         List<RequestItem> requests = new ArrayList<>();
         boolean autoSelectEnabled = false;
         boolean autoSelectLoaded = false;
+        boolean autoNextEnabled = false;
+        boolean autoNextLoaded = false;
     }
 
     private static class RequestItem {
@@ -161,6 +164,9 @@ public class MainActivity extends Activity {
                     else if ("auto_select_enabled".equals(key)) {
                         data.autoSelectEnabled = value > 0 || "1".equals(valueStr) || "true".equalsIgnoreCase(valueStr);
                         data.autoSelectLoaded = true;
+                    } else if ("auto_next_enabled".equals(key)) {
+                        data.autoNextEnabled = value > 0 || "1".equals(valueStr) || "true".equalsIgnoreCase(valueStr);
+                        data.autoNextLoaded = true;
                     }
                 } while (cursor.moveToNext());
             }
@@ -255,6 +261,13 @@ public class MainActivity extends Activity {
             } else {
                 // 若 ContentProvider 和 SP 不一致，以 SP 用户最后点击的为准
                 if (data.autoSelectEnabled != spAuto) data.autoSelectEnabled = spAuto;
+            }
+            // 自动下一题开关
+            boolean spNext = selfSp.getBoolean("auto_next_enabled", data.autoNextEnabled);
+            if (!data.autoNextLoaded) {
+                data.autoNextEnabled = spNext;
+            } else {
+                if (data.autoNextEnabled != spNext) data.autoNextEnabled = spNext;
             }
         } catch (Throwable ignored) {}
 
@@ -991,6 +1004,41 @@ public class MainActivity extends Activity {
         row1Lp.topMargin = dp(14);
         content.addView(row1, row1Lp);
 
+        // ========== 列表项 1.5：自动下一题开关 ==========
+        final boolean autoNextOn = data != null && data.autoNextEnabled;
+        LinearLayout rowNext = buildActionRowV3(
+                "»", DS_YELLOW, 0xFFD97706,
+                "自动下一题",
+                autoNextOn ? "已开启，选完答案后自动点击下一题（含随机延迟）" : "点击右侧开关开启此功能（建议先开启自动答题）",
+                autoNextOn,
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        try {
+                            boolean current = !autoNextOn;
+                            ContentValues cv = new ContentValues();
+                            cv.put("auto_next_enabled", current);
+                            getContentResolver().update(
+                                    android.net.Uri.parse("content://" + MODULE_PACKAGE + ".stats/update"),
+                                    cv, null, null);
+                        } catch (Throwable ignored) {}
+                        try {
+                            SharedPreferences sp = getSharedPreferences("module_stats", MODE_PRIVATE);
+                            sp.edit().putBoolean("auto_next_enabled", !autoNextOn).apply();
+                        } catch (Throwable ignored) {}
+                        Toast.makeText(MainActivity.this,
+                                !autoNextOn ? "✓ 自动下一题已开启" : "自动下一题已关闭",
+                                Toast.LENGTH_SHORT).show();
+                        refreshStatsAsync();
+                    }
+                },
+                true // 使用开关
+        );
+        LinearLayout.LayoutParams rowNextLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowNextLp.topMargin = dp(10);
+        content.addView(rowNext, rowNextLp);
+
         // ========== 列表项 2：启动目标应用 ==========
         LinearLayout row2 = buildActionRowV3(
                 "▶", DS_BLUE, 0xFF1D4ED8,
@@ -1040,12 +1088,16 @@ public class MainActivity extends Activity {
                         try {
                             SharedPreferences selfSp = getSharedPreferences("module_stats", MODE_PRIVATE);
                             boolean savedAuto = selfSp.getBoolean("auto_select_enabled", false);
+                            boolean savedNext = selfSp.getBoolean("auto_next_enabled", false);
                             try {
                                 getContentResolver().delete(
                                         android.net.Uri.parse("content://" + MODULE_PACKAGE + ".stats/clear"),
                                         null, null);
                             } catch (Throwable ignored) {}
-                            selfSp.edit().clear().putBoolean("auto_select_enabled", savedAuto).apply();
+                            selfSp.edit().clear()
+                                    .putBoolean("auto_select_enabled", savedAuto)
+                                    .putBoolean("auto_next_enabled", savedNext)
+                                    .apply();
                             Toast.makeText(MainActivity.this, "已清空统计", Toast.LENGTH_SHORT).show();
                             refreshStatsAsync();
                         } catch (Throwable t) {

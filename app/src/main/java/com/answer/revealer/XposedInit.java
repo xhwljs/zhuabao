@@ -52,6 +52,7 @@ public class XposedInit implements IXposedHookLoadPackage {
 
     // 配置
     private static final String CONFIG_KEY_AUTO_SELECT = "auto_select_enabled";
+    private static final String CONFIG_KEY_AUTO_NEXT = "auto_next_enabled";
     private static final String CONFIG_SP_NAME = "answer_revealer_status";
     private static final String ANSWER_MARKER = "正确答案";
 
@@ -775,6 +776,41 @@ public class XposedInit implements IXposedHookLoadPackage {
         return false;
     }
 
+    // ============ 自动下一题：读取开关状态 ============
+    private static boolean readAutoNextEnabled() {
+        try {
+            Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
+            if (ctx == null) return false;
+
+            // 1. ContentProvider 查询
+            try {
+                Cursor cursor = ctx.getContentResolver().query(PROVIDER_QUERY_URI, null, null, null, null);
+                if (cursor != null && cursor.moveToFirst()) {
+                    do {
+                        try {
+                            String key = cursor.getString(cursor.getColumnIndex("key"));
+                            if (CONFIG_KEY_AUTO_NEXT.equals(key)) {
+                                long val = cursor.getLong(cursor.getColumnIndex("value"));
+                                String valueStr = cursor.getString(cursor.getColumnIndex("value_str"));
+                                cursor.close();
+                                return val > 0 || "1".equals(valueStr) || "true".equalsIgnoreCase(valueStr);
+                            }
+                        } catch (Throwable ignored) {}
+                    } while (cursor.moveToNext());
+                    cursor.close();
+                }
+            } catch (Throwable ignored) {}
+
+            // 2. Fallback：从目标应用 SP 读取
+            try {
+                android.content.SharedPreferences sp = ctx.getSharedPreferences(
+                        CONFIG_SP_NAME, Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
+                return sp.getBoolean(CONFIG_KEY_AUTO_NEXT, false);
+            } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
     // ============ 安装自动选中 Hook ============
     private void setupAutoSelectHooks(final ClassLoader cl) {
         // === 1. WebChromeClient.onConsoleMessage（新版API）===
@@ -981,7 +1017,8 @@ public class XposedInit implements IXposedHookLoadPackage {
             String safeA = escapeJsString(answerText);
             String safeTag = escapeJsString(sourceTag);
 
-            final String js = buildAutoClickJS2(safeA, safeM, safeTag);
+            final boolean autoNext = readAutoNextEnabled();
+            final String js = buildAutoClickJS2(safeA, safeM, safeTag, autoNext);
 
             // === 构造 ValueCallback 来捕获 evaluateJavascript 的返回值 ===
             Object callback = null;
@@ -998,6 +1035,17 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     // 如果 JS 返回值中显示成功选中，立即标记
                                     if (valStr.contains("SUCCESS") || valStr.contains("SEL=1")) {
                                         sAlreadyAutoSelected.set(true);
+                                        // 如果启用了自动下一题，显示提示
+                                        if (autoNext) {
+                                            // 从返回值中提取 NEXT= 信息
+                                            int idx = valStr.indexOf("|NEXT=");
+                                            String nextInfo = idx >= 0 ? valStr.substring(idx + 6) : "";
+                                            if (nextInfo.contains("NEXT") || nextInfo.contains("下题")) {
+                                                showToastSafe("✓ 已选答案，稍后自动进入下一题");
+                                            } else if (nextInfo.contains("STOP") || nextInfo.contains("交卷")) {
+                                                showToastSafe("⚠ 已到达最后一题，未自动点击交卷");
+                                            }
+                                        }
                                     }
                                 } catch (Throwable ignored) {}
                                 return null;
@@ -1061,8 +1109,8 @@ public class XposedInit implements IXposedHookLoadPackage {
         return sb.toString();
     }
 
-    // ============ 构建自动选中 JS（v8 — try块内返回明确的 SUCCESS/FAIL 字符串）============
-    private static String buildAutoClickJS2(String safeA, String safeM, String safeTag) {
+    // ============ 构建自动选中 JS（v8 — try块内返回明确的 SUCCESS/FAIL 字符串 + 自动下一题）============
+    private static String buildAutoClickJS2(String safeA, String safeM, String safeTag, final boolean autoNext) {
         StringBuilder sb = new StringBuilder();
         // 整体 try-catch，确保任何情况都有返回值
         sb.append("(function(){try{");
@@ -1156,9 +1204,44 @@ public class XposedInit implements IXposedHookLoadPackage {
 
         sb.append("l('v8 done SEL='+SEL);");
 
+        // ============ 自动下一题：DOM 扫描 + 随机延迟点击 ============
+        // 关键词：找所有可点击元素中 innerText 含"下一题"、"下一页"、"下一题"等
+        // 排除：含"交卷"、"提交"、"完成"的按钮（避免提前交卷）
+        sb.append("var NEXT_KW=['下一题','下一页','下一个','下题','Next','next','›','»'];");
+        sb.append("var STOP_KW=['交卷','提交','完成','已完成','Finish','finish'];");
+        sb.append("var NFOUND='';");
+        sb.append("var NBTN=null;");
+        // 扫描策略：优先 BUTTON/A 标签，其次 role=button，最后所有带 onclick 或 clickable 的元素
+        sb.append("function matchKw(t,kwArr){if(!t)return false;for(var yi=0;yi<kwArr.length;yi++){if(t.indexOf(kwArr[yi])>=0)return true;}return false;}");
+        sb.append("if(SEL>0){try{");
+        sb.append("var nq=D.querySelectorAll('button,a,div[onclick],span[onclick],*[role=button]');");
+        sb.append("for(var qi=0;qi<nq.length;qi++){var qt='';try{qt=(nq[qi].innerText||nq[qi].textContent||nq[qi].value||'').toString().trim();}catch(e){}if(!qt||qt.length>20)continue;");
+        sb.append("if(matchKw(qt,STOP_KW)){NFOUND='STOP:'+qt+' tag='+nq[qi].tagName;break;}if(matchKw(qt,NEXT_KW)){NBTN=nq[qi];NFOUND='NEXT:'+qt+' tag='+nq[qi].tagName+' cls='+(nq[qi].className||'').substring(0,40);break;}}");
+        sb.append("}catch(e){NFOUND='ERR:'+e.message;}");
+        // 兜底：再扫一次所有元素，找与"题"、"页"相关的
+        sb.append("if(!NBTN){try{var nq2=D.body.querySelectorAll('*');for(var qj=0;qj<nq2.length;qj++){var qt2='';try{qt2=(nq2[qj].innerText||nq2[qj].textContent||'').toString().trim();}catch(e){}if(!qt2||qt2.length>20||qt2.length<2)continue;if(matchKw(qt2,STOP_KW)){NFOUND='STOP:'+qt2;break;}if(matchKw(qt2,NEXT_KW)){NBTN=nq2[qj];NFOUND='NEXT2:'+qt2+' tag='+nq2[qj].tagName;break;}}}catch(e){}}");
+        sb.append("}");
+        // 输出调试信息（通过 document.title 变化让 Java 层可观察）
+        sb.append("try{var dbg='[AR]SEL='+SEL+' NB='+(NBTN?'YES':'NO')+' '+NFOUND;document.title=dbg;}catch(e){}");
+        // 如果启用自动下一题 + 找到下一题按钮 + 不是交卷按钮：随机延迟后点击
+        if (autoNext) {
+            sb.append("if(SEL>0&&NBTN&&NFOUND&&NFOUND.indexOf('STOP')<0){");
+            // 2000~5000 毫秒随机延迟（模拟真实答题速度）
+            sb.append("var _delay=2000+Math.floor(Math.random()*3000);");
+            sb.append("setTimeout(function(){try{");
+            // 先检查按钮是否仍可见
+            sb.append("var _vis=false;try{var _rec=NBTN.getBoundingClientRect();_vis=(_rec&&_rec.width>0&&_rec.height>0);}catch(e){_vis=true;}if(!_vis)return;");
+            // 终极点击：优先 click()，失败则 dispatch MouseEvent
+            sb.append("try{NBTN.click();}catch(e){}");
+            sb.append("try{var _evt=new MouseEvent('click',{bubbles:true,cancelable:true,view:window,button:0});NBTN.dispatchEvent(_evt);}catch(e){try{var _evt2=D.createEvent('MouseEvents');_evt2.initEvent('click',true,true);NBTN.dispatchEvent(_evt2);}catch(e2){}}");
+            sb.append("try{document.title='[AR]CLICKED NEXT delay='+_delay;}catch(e){}");
+            sb.append("}catch(e){try{document.title='[AR]NEXT ERR:'+e.message;}catch(e2){}}},_delay);");
+            sb.append("}");
+        }
+
         // === 关键：在 try 块内返回明确格式的字符串！===
         // 这是 evaluateJavascript 的 ValueCallback 会捕获的值
-        sb.append("return(SEL>0?'[ANSWER]SUCCESS|'+TAG+'|SEL='+SEL+'|FOUND='+FOUND:'[ANSWER]FAIL|'+TAG+'|SEL=0|未找到可点击元素');");
+        sb.append("return(SEL>0?'[ANSWER]SUCCESS|'+TAG+'|SEL='+SEL+'|FOUND='+FOUND+'|NEXT='+NFOUND:'[ANSWER]FAIL|'+TAG+'|SEL=0|未找到可点击元素');");
 
         // 捕获异常后也返回字符串（失败情况）
         sb.append("}catch(e){try{console.log('[ANSWER]'+TAG+' TOPERR:'+e.message);}catch(e2){}try{document.title='[ERR]'+TAG+':'+e.message;}catch(e2){}");
