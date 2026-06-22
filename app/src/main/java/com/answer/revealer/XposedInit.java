@@ -1272,7 +1272,7 @@ public class XposedInit implements IXposedHookLoadPackage {
             sb.append("return(SEL>0?'[ANSWER]SUCCESS|'+TAG+'|SEL='+SEL+'|FOUND='+FOUND+'|BUTTONS='+NLOG.substring(0,Math.min(NLOG.length,2000)):'[ANSWER]FAIL|'+TAG+'|SEL=0|BUTTONS='+NLOG.substring(0,Math.min(NLOG.length,2000)));");
         } else {
             sb.append("return(SEL>0?'[ANSWER]SUCCESS|'+TAG+'|SEL='+SEL+'|FOUND='+FOUND:'[ANSWER]FAIL|'+TAG+'|SEL=0);");
-        }");
+        }
 
         // 捕获异常后也返回字符串（失败情况）
         sb.append("}catch(e){try{console.log('[ANSWER]'+TAG+' TOPERR:'+e.message);}catch(e2){}try{document.title='[ERR]'+TAG+':'+e.message;}catch(e2){}");
