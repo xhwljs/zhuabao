@@ -1231,12 +1231,13 @@ public class XposedInit implements IXposedHookLoadPackage {
         if (autoNext) {
             sb.append("var NLOG='';");
             sb.append("try{");
-            // 1. 扫描常见的可点击元素
-            sb.append("var ns=D.querySelectorAll('button,a,div[onclick],span[onclick],*[role=button],input[type=button],input[type=submit]');");
+            // 1. 扫描所有可能包含"下一题"的自定义元素和 class 命中元素
+            // 已知：目标页面使用 UNI-VIEW 类名容器，包含 footer-btn-box / btn-box / btn nexts 等 class
+            sb.append("var ns=D.querySelectorAll('UNI-VIEW,.footer-btn-box,.btn-box,[class*=btn-box],[class*=footer-btn],[class*=nexts],.nexts,button,a,div[onclick],span[onclick],*[role=button],input[type=button],input[type=submit]');");
             sb.append("NLOG=NLOG+'TOTAL='+ns.length+'|';");
             sb.append("for(var xi=0;xi<ns.length;xi++){try{");
-            sb.append("var _t=(ns[xi].innerText||ns[xi].textContent||ns[xi].value||'').toString().trim();");
-            sb.append("var _cls=(ns[xi].className||'').toString().substring(0,60);");
+            sb.append("var _t=(ns[xi].innerText||ns[xi].textContent||'').toString().replace(/\\s+/g,' ').trim();");
+            sb.append("var _cls=(ns[xi].className||'').toString().substring(0,80);");
             sb.append("var _id=(ns[xi].id||'').toString().substring(0,40);");
             sb.append("var _tag=(ns[xi].tagName||'').toString().toUpperCase();");
             sb.append("var _onclick=ns[xi].getAttribute&&ns[xi].getAttribute('onclick')?ns[xi].getAttribute('onclick').substring(0,80):'';");
@@ -1244,25 +1245,30 @@ public class XposedInit implements IXposedHookLoadPackage {
             sb.append("var _style_display='';try{_style_display=D.defaultView&&D.defaultView.getComputedStyle?(D.defaultView.getComputedStyle(ns[xi],null).getPropertyValue('display')):'';}catch(e){}");
             sb.append("var _style_vis='';try{_style_vis=D.defaultView&&D.defaultView.getComputedStyle?(D.defaultView.getComputedStyle(ns[xi],null).getPropertyValue('visibility')):'';}catch(e){}");
             sb.append("var _rect_w=0;var _rect_h=0;try{var _r=ns[xi].getBoundingClientRect();_rect_w=Math.round(_r.width);_rect_h=Math.round(_r.height);}catch(e){}");
-            sb.append("NLOG=NLOG+'{'+'['+xi+']'+_tag+' txt='+_t+' cls='+_cls+' id='+_id+' role='+_role+' onclick='+_onclick+' disp='+_style_display+' vis='+_style_vis+' w='+_rect_w+' h='+_rect_h+'}';");
-            // 打印到 console.log（通过 hook WebChromeClient.onConsoleMessage 捕获到 logcat）
-            sb.append("try{console.log('[NEXTBTN] idx='+xi+' tag='+_tag+' txt='+_t+' cls='+_cls+' id='+_id+' role='+_role+' onclick='+_onclick+' w='+_rect_w+' h='+_rect_h);}catch(e){}");
+            // 打印到 console.log（LSPosed hook onConsoleMessage 捕获）
+            sb.append("try{console.log('[NEXTBTN] idx='+xi+' tag='+_tag+' txt='+_t+' cls='+_cls+' id='+_id+' role='+_role+' onclick='+_onclick+' w='+_rect_w+' h='+_rect_h+' disp='+_style_display+' vis='+_style_vis);}catch(e){}");
+            sb.append("NLOG=NLOG+'{'+'['+xi+']'+_tag+' txt='+_t+' cls='+_cls+' id='+_id+' onclick='+_onclick+' w='+_rect_w+' h='+_rect_h+'}';");
             sb.append("}catch(e){NLOG=NLOG+'[ERR'+xi+']'+e.message;}}");
             sb.append("}catch(e){NLOG=NLOG+'SCAN_ERR:'+e.message;}");
-            // 2. 兜底：扫所有元素中含关键词的
-            sb.append("try{var all_n=D.body.querySelectorAll('*');var _extra='';for(var yi=0;yi<all_n.length&&yi<300;yi++){try{");
-            sb.append("var xt=(all_n[yi].innerText||all_n[yi].textContent||'').toString().trim();");
-            sb.append("if(!xt||xt.length>20||xt.length<2)continue;");
-            sb.append("if(xt.indexOf('下一题')>=0||xt.indexOf('下一页')>=0||xt.indexOf('交卷')>=0||xt.indexOf('提交')>=0||xt.indexOf('完成')>=0||xt.indexOf('下题')>=0){");
+            // 2. 兜底：扫描所有元素，匹配关键词（不限长度，只要含关键词就输出）
+            sb.append("try{var all_n=D.body.querySelectorAll('*');var _extra='';var _ecount=0;for(var yi=0;yi<all_n.length&&yi<500;yi++){try{");
+            sb.append("var xt=(all_n[yi].innerText||all_n[yi].textContent||'').toString().replace(/\\s+/g,' ').trim();");
+            // 不再限制 xt 长度，只要含关键词就记录
+            sb.append("if(!xt||xt.length<1)continue;");
+            sb.append("if(xt.indexOf('下一题')>=0||xt.indexOf('下一页')>=0||xt.indexOf('交卷')>=0||xt.indexOf('提交')>=0||xt.indexOf('完成')>=0){");
             sb.append("var _xtag=(all_n[yi].tagName||'').toString().toUpperCase();");
-            sb.append("var _xcls=(all_n[yi].className||'').toString().substring(0,60);");
+            sb.append("var _xcls=(all_n[yi].className||'').toString().substring(0,80);");
             sb.append("var _xid=(all_n[yi].id||'').toString().substring(0,40);");
-            sb.append("_extra=_extra+'['+_xtag+' txt='+xt+' cls='+_xcls+' id='+_xid+']';");
-            sb.append("try{console.log('[NEXTBTN_EXTRA] tag='+_xtag+' txt='+xt+' cls='+_xcls+' id='+_xid);}catch(e){}");
-            sb.append("}}catch(e){}}NLOG=NLOG+'|EXTRA:'+_extra;}catch(e){NLOG=NLOG+'EXTRA_ERR:'+e.message;}");
-            // 3. 写入 document.title
+            sb.append("var _xonclick=all_n[yi].getAttribute&&all_n[yi].getAttribute('onclick')?all_n[yi].getAttribute('onclick').substring(0,80):'';");
+            sb.append("var _xw=0;var _xh=0;try{var _xr=all_n[yi].getBoundingClientRect();_xw=Math.round(_xr.width);_xh=Math.round(_xr.height);}catch(e){}");
+            sb.append("try{console.log('[NEXTBTN_EXTRA] tag='+_xtag+' txt='+xt+' cls='+_xcls+' id='+_xid+' onclick='+_xonclick+' w='+_xw+' h='+_xh);}catch(e){}");
+            sb.append("_extra=_extra+'{'+_xtag+' txt='+xt+' cls='+_xcls+' id='+_xid+' onclick='+_xonclick+' w='+_xw+' h='+_xh+'}';_ecount++;if(_ecount>=20)break;");
+            sb.append("}}catch(e){}}NLOG=NLOG+'|EXTRA('+_ecount+'):'+_extra;}catch(e){NLOG=NLOG+'EXTRA_ERR:'+e.message;}");
+            // 3. 深度扫描：直接搜 className 中含 btn/next 的所有元素（不限标签）
+            sb.append("try{var _deep=[];var _all2=D.body.querySelectorAll('*');for(var zi=0;zi<_all2.length&&zi<500;zi++){try{var _c2=(String(_all2[zi].className||''));if(_c2.indexOf('btn')>=0||_c2.indexOf('next')>=0||_c2.indexOf('footer')>=0||_c2.indexOf('box')>=0){var _zt=(_all2[zi].innerText||_all2[zi].textContent||'').replace(/\\s+/g,' ').trim();var _ztag=(_all2[zi].tagName||'').toUpperCase();var _zid=(_all2[zi].id||'').toString();var _zw2=0;var _zh2=0;try{var _zr=_all2[zi].getBoundingClientRect();_zw2=Math.round(_zr.width);_zh2=Math.round(_zr.height);}catch(e){}try{console.log('[NEXTBTN_DEEP] tag='+_ztag+' txt='+_zt+' cls='+_c2+' id='+_zid+' w='+_zw2+' h='+_zh2);}catch(e){}_deep.push(_ztag+'_'+_zt+'_cls='+_c2+'_id='+_zid+'_w='+_zw2+'_h='+_zh2);}}catch(e){}}NLOG=NLOG+'|DEEP('+_deep.length+'):'+_deep.slice(0,20).join('|');}catch(e){NLOG=NLOG+'DEEP_ERR:'+e.message;}");
+            // 4. 写入 document.title
             sb.append("try{var _title='[AR]'+(new Date().toLocaleTimeString())+' SEL='+SEL+' BTN='+(ns?ns.length:0);document.title=_title;}catch(e){}");
-            // 4. 汇总 console.log
+            // 5. 汇总 console.log
             sb.append("try{console.log('[ANSWER_RESULT] SEL='+SEL+' '+NLOG.substring(0,Math.min(NLOG.length,2000)));}catch(e){}");
         }
 
