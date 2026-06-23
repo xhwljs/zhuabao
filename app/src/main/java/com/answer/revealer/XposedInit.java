@@ -341,7 +341,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 } catch (Throwable ignored) {}
                                 param.setResult(wresp);
 
-                                // === 只做 JS 注入 —— 3 次延迟，完全移除 Java 层触摸 ===
+                                // === 只做 JS 注入 —— 只调度一次，JS 内部用 MutationObserver 持续监听 ===
                                 final Object webViewObj = param.args[0];
                                 if (webViewObj != null) {
                                     // 调度防抖：3秒内已经排过任务就不再排（防止多个 API 请求堆积延迟任务）
@@ -349,16 +349,14 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     if (now - sLastScheduledTime < SCHEDULE_DEBOUNCE_MS) return;
                                     sLastScheduledTime = now;
 
-                                    // 2500ms / 3500ms / 4500ms 三次 JS 注入
-                                    long[] delays = {2500, 3500, 4500};
-                                    for (long delay : delays) {
-                                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
-                                            @Override
-                                            public void run() {
-                                                injectJsIntoWebView(webViewObj, "[shouldInterceptRequest-" + delay + "ms]");
-                                            }
-                                        }, delay);
-                                    }
+                                    // 只调度一次 1500ms 注入，JS 内部的 MutationObserver 会持续监听直到找到答案
+                                    // （避免多次延迟任务在不同题目上依次生效的问题）
+                                    new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            injectJsIntoWebView(webViewObj, "[shouldInterceptRequest]");
+                                        }
+                                    }, 1500);
                                 }
                             } catch (Throwable t) {
                                 // WebView shouldInterceptRequest 异常（已清除日志）
@@ -910,14 +908,12 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 long now = System.currentTimeMillis();
                                 if (now - sLastScheduledTime < SCHEDULE_DEBOUNCE_MS) return;
                                 sLastScheduledTime = now;
-                                long[] delays = {1500, 2500, 3500};
-                                for (long d : delays) {
-                                    new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
-                                        @Override public void run() {
-                                            injectJsIntoWebView(webView, "[onPageFinished-" + ((int)d) + "ms]");
-                                        }
-                                    }, d);
-                                }
+                                // 只调度一次 1000ms 注入，JS 内部 MutationObserver 会持续监听
+                                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                    @Override public void run() {
+                                        injectJsIntoWebView(webView, "[onPageFinished]");
+                                    }
+                                }, 1000);
                             } catch (Throwable ignored) {}
                         }
                     });
