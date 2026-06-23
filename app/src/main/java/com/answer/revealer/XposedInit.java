@@ -70,7 +70,11 @@ public class XposedInit implements IXposedHookLoadPackage {
 
     // 防重：注入成功后的冷却时间（毫秒），冷却期内不允许再次注入（防止多个延迟任务在不同题目上连续触发）
     private static volatile long sLastSuccessTime = 0;
-    private static final long AUTO_SELECT_COOLDOWN_MS = 5000;
+    private static final long AUTO_SELECT_COOLDOWN_MS = 8000;
+
+    // 防重：调度防抖 - 如果最近已经排过注入任务，则不再重复排（防止 shouldInterceptRequest 多次触发堆积）
+    private static volatile long sLastScheduledTime = 0;
+    private static final long SCHEDULE_DEBOUNCE_MS = 3000;
 
     // 防重：onProgressChanged 同一个 WebView 只在第一次达到100%时触发
     private static final java.util.Set<Integer> sProgressDoneWebViews =
@@ -336,6 +340,11 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 // === 只做 JS 注入 —— 3 次延迟，完全移除 Java 层触摸 ===
                                 final Object webViewObj = param.args[0];
                                 if (webViewObj != null) {
+                                    // 调度防抖：3秒内已经排过任务就不再排（防止多个 API 请求堆积延迟任务）
+                                    long now = System.currentTimeMillis();
+                                    if (now - sLastScheduledTime < SCHEDULE_DEBOUNCE_MS) return;
+                                    sLastScheduledTime = now;
+
                                     // 2500ms / 3500ms / 4500ms 三次 JS 注入
                                     long[] delays = {2500, 3500, 4500};
                                     for (long delay : delays) {
@@ -893,6 +902,10 @@ public class XposedInit implements IXposedHookLoadPackage {
                             try {
                                 final Object webView = param.args[0];
                                 if (webView == null) return;
+                                // 调度防抖：3秒内已经排过任务就不再排
+                                long now = System.currentTimeMillis();
+                                if (now - sLastScheduledTime < SCHEDULE_DEBOUNCE_MS) return;
+                                sLastScheduledTime = now;
                                 long[] delays = {1500, 2500, 3500};
                                 for (long d : delays) {
                                     new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
@@ -922,6 +935,11 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 int wvId = System.identityHashCode(webView);
                                 if (sProgressDoneWebViews.contains(wvId)) return;
                                 sProgressDoneWebViews.add(wvId);
+
+                                // 调度防抖：3秒内已经排过任务就不再排
+                                long now = System.currentTimeMillis();
+                                if (now - sLastScheduledTime < SCHEDULE_DEBOUNCE_MS) return;
+                                sLastScheduledTime = now;
 
                                 new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
                                     @Override public void run() {
