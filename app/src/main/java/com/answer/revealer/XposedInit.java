@@ -70,11 +70,11 @@ public class XposedInit implements IXposedHookLoadPackage {
 
     // 防重：注入成功后的冷却时间（毫秒），冷却期内不允许再次注入（防止多个延迟任务在不同题目上连续触发）
     private static volatile long sLastSuccessTime = 0;
-    private static final long AUTO_SELECT_COOLDOWN_MS = 8000;
+    private static final long AUTO_SELECT_COOLDOWN_MS = 3000;
 
     // 防重：调度防抖 - 如果最近已经排过注入任务，则不再重复排（防止 shouldInterceptRequest 多次触发堆积）
     private static volatile long sLastScheduledTime = 0;
-    private static final long SCHEDULE_DEBOUNCE_MS = 3000;
+    private static final long SCHEDULE_DEBOUNCE_MS = 1500;
 
     // 防重：onProgressChanged 同一个 WebView 只在第一次达到100%时触发
     private static final java.util.Set<Integer> sProgressDoneWebViews =
@@ -1026,7 +1026,7 @@ public class XposedInit implements IXposedHookLoadPackage {
             // 如果已经成功选中过，就不再重复（防止在选项间乱跳）
             if (sAlreadyAutoSelected.get()) return;
 
-            // 冷却时间检查：上次成功后5秒内不允许再次注入（防止多个延迟任务在不同题目上连续触发）
+            // 冷却时间检查：上次成功后冷却期内不允许再次注入（防止多个延迟任务在不同题目上连续触发）
             long now = System.currentTimeMillis();
             if (sLastSuccessTime > 0 && now - sLastSuccessTime < AUTO_SELECT_COOLDOWN_MS) return;
 
