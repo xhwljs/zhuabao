@@ -40,6 +40,8 @@ public class StatsProvider extends ContentProvider {
     public static final Uri URI_REQUEST = Uri.withAppendedPath(URI_BASE, "request");
     public static final Uri URI_CLEAR = Uri.withAppendedPath(URI_BASE, "clear");
     public static final Uri URI_ANSWER = Uri.withAppendedPath(URI_BASE, "answer");
+    public static final Uri URI_LOG = Uri.withAppendedPath(URI_BASE, "log");
+    public static final Uri URI_LOG_CLEAR = Uri.withAppendedPath(URI_BASE, "log_clear");
 
     private static final String SP_NAME = "module_stats";
     private static final String TAG = "StatsProvider";
@@ -53,6 +55,10 @@ public class StatsProvider extends ContentProvider {
     public static final String KEY_AUTO_NEXT = "auto_next_enabled";
     public static final String KEY_ANSWER_TEXT = "answer_text";
     public static final String KEY_ANSWER_MARKED = "answer_marked_text";
+    public static final String KEY_LOG_COUNTER = "_log_counter";
+    public static final String LOG_PREFIX = "log_";
+    public static final String LOG_TYPE_ANSWER = "answer";
+    public static final String LOG_TYPE_NEXT = "next";
 
     private static final String[] ALL_KEYS = {
             KEY_TARGET_HIT_COUNT,
@@ -130,6 +136,42 @@ public class StatsProvider extends ContentProvider {
                         }
                     } catch (Throwable ignored) {}
                     cursor.newRow().add(i + 1).add(type).add(url).add(t);
+                }
+                return cursor;
+            }
+
+            if ("log".equals(path)) {
+                List<Map.Entry<String, ?>> logEntries = new ArrayList<>();
+                for (Map.Entry<String, ?> e : sp.getAll().entrySet()) {
+                    if (e.getKey() != null && e.getKey().startsWith(LOG_PREFIX)) {
+                        logEntries.add(e);
+                    }
+                }
+                Collections.sort(logEntries, new Comparator<Map.Entry<String, ?>>() {
+                    @Override
+                    public int compare(Map.Entry<String, ?> a, Map.Entry<String, ?> b) {
+                        return b.getKey().compareTo(a.getKey());
+                    }
+                });
+
+                String[] columns = {"_id", "type", "method", "detail", "time"};
+                cursor = new MatrixCursor(columns);
+                int limit = Math.min(logEntries.size(), 200);
+                for (int i = 0; i < limit; i++) {
+                    Map.Entry<String, ?> e = logEntries.get(i);
+                    String val = e.getValue() instanceof String ? (String) e.getValue() : "";
+                    String[] parts = val.split("\\|", -1);
+                    String type = parts.length > 0 ? parts[0] : "";
+                    String method = parts.length > 1 ? parts[1] : "";
+                    String detail = parts.length > 2 ? parts[2] : "";
+                    long t = 0;
+                    try {
+                        int last = e.getKey().lastIndexOf("_");
+                        if (last > 0) {
+                            t = Long.parseLong(e.getKey().substring(last + 1));
+                        }
+                    } catch (Throwable ignored) {}
+                    cursor.newRow().add(i + 1).add(type).add(method).add(detail).add(t);
                 }
                 return cursor;
             }
