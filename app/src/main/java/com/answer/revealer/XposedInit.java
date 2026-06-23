@@ -241,7 +241,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 Object conn = param.thisObject;
                                 Object url = XposedHelpers.callMethod(conn, "getURL");
                                 String urlStr = url != null ? url.toString() : "";
-                                writeRequestRecord("HTTP_URL_CONN", urlStr);
                                 if (!urlStr.contains(TARGET_PATH_KEYWORD)) return;
 
                                 Object bodyIn = param.getResult();
@@ -280,8 +279,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 Object urlObj = XposedHelpers.callMethod(req, "getUrl");
                                 if (urlObj == null) return;
                                 String urlStr = urlObj.toString();
-
-                                writeRequestRecord("WEBVIEW_INTERCEPT", urlStr);
 
                                 if (!urlStr.contains(TARGET_PATH_KEYWORD)) return;
 
@@ -383,7 +380,6 @@ public class XposedInit implements IXposedHookLoadPackage {
 
                                 targetHitCounter.incrementAndGet();
                                 updateHitCountInProvider();
-                                writeRequestRecord("WEBVIEW_INTERCEPT_OLD", urlStr);
 
                                 byte[] responseBytes = null;
                                 int statusCode = 200;
@@ -439,7 +435,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 Object urlObj = XposedHelpers.callMethod(req, "getUrl");
                                 if (urlObj == null) return;
                                 String urlStr = urlObj.toString();
-                                writeRequestRecord("X5WEBVIEW_INTERCEPT", urlStr);
                                 if (!urlStr.contains(TARGET_PATH_KEYWORD)) return;
 
                                 targetHitCounter.incrementAndGet();
@@ -503,7 +498,6 @@ public class XposedInit implements IXposedHookLoadPackage {
         try {
             String urlStr = extractOkHttpUrl(response);
             if (urlStr == null) return;
-            writeRequestRecord("OKHTTP_RESP", urlStr);
             if (!urlStr.contains(TARGET_PATH_KEYWORD)) return;
 
             targetHitCounter.incrementAndGet();
