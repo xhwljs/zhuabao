@@ -84,6 +84,9 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static final java.util.Set<Integer> sProgressDoneWebViews =
             java.util.Collections.synchronizedSet(new java.util.HashSet<Integer>());
 
+    // 最近一次注入的 WebView 弱引用（答案更新时主动触发注入用）
+    private static volatile java.lang.ref.WeakReference<Object> sLastWebViewRef = null;
+
     // ContentProvider URI - 答案文本
     private static final Uri PROVIDER_ANSWER_URI = Uri.parse("content://com.answer.revealer.stats/answer");
     private static final String KEY_ANSWER_TEXT = "answer_text";
@@ -652,6 +655,21 @@ public class XposedInit implements IXposedHookLoadPackage {
                 sCorrectAnswerTimestamp = System.currentTimeMillis();
                 sAlreadyAutoSelected.set(false);
                 writeAnswerToProvider(sCorrectAnswerText, sMarkedAnswerText);
+
+                // 答案更新（新题目）时，主动触发一次 JS 注入
+                // （uni-app SPA 切换题目时不会触发新的 shouldInterceptRequest，需要主动调度）
+                final java.lang.ref.WeakReference<Object> wvRef = sLastWebViewRef;
+                if (wvRef != null) {
+                    final Object wv = wvRef.get();
+                    if (wv != null) {
+                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                injectJsIntoWebView(wv, "[answer-updated]");
+                            }
+                        }, 800);
+                    }
+                }
             }
             return changed ? root.toString() : bodyStr;
         } catch (Throwable t) {
@@ -871,7 +889,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                     });
         } catch (Throwable ignored) {}
 
-        // === 2. WebViewClient.onPageStarted → 页面加载后 2.5s/3.5s/4.5s 注入 JS ===
+        // === 2. WebViewClient.onPageStarted → 页面加载后延迟注入 JS ===
         try {
             XposedHelpers.findAndHookMethod("android.webkit.WebViewClient", cl, "onPageStarted",
                     "android.webkit.WebView", String.class, "android.graphics.Bitmap",
@@ -881,14 +899,16 @@ public class XposedInit implements IXposedHookLoadPackage {
                             try {
                                 final Object webView = param.args[0];
                                 if (webView == null) return;
-                                long[] delays = {2500, 3500, 4500};
-                                for (long d : delays) {
-                                    new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
-                                        @Override public void run() {
-                                            injectJsIntoWebView(webView, "[onPageStarted-" + ((int)d) + "ms]");
-                                        }
-                                    }, d);
-                                }
+                                // 调度防抖
+                                long now = System.currentTimeMillis();
+                                if (now - sLastScheduledTime < SCHEDULE_DEBOUNCE_MS) return;
+                                sLastScheduledTime = now;
+                                // 只调度一次 2000ms 注入，JS 内部 MutationObserver 持续监听
+                                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                    @Override public void run() {
+                                        injectJsIntoWebView(webView, "[onPageStarted]");
+                                    }
+                                }, 2000);
                             } catch (Throwable ignored) {}
                         }
                     });
@@ -1022,6 +1042,9 @@ public class XposedInit implements IXposedHookLoadPackage {
         try {
             if (!readAutoSelectEnabled()) return;
             if (webViewObj == null) return;
+
+            // 保存 WebView 引用，答案更新时主动触发注入用
+            sLastWebViewRef = new java.lang.ref.WeakReference<>(webViewObj);
 
             // 如果已经成功选中过，就不再重复（防止在选项间乱跳）
             if (sAlreadyAutoSelected.get()) return;
