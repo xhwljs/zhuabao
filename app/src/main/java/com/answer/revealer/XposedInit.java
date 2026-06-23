@@ -1292,14 +1292,14 @@ public class XposedInit implements IXposedHookLoadPackage {
     }
 
     // ============ 自动下一题：触发入口（模块化，独立调用） ============
-    // 答案选中成功后调用，延迟 400ms 后开始查找并点击下一题按钮
+    // 答案选中成功后调用，延迟 800ms 后开始查找并点击下一题按钮
     private static void triggerAutoNext(final Object webViewObj) {
         if (webViewObj == null) return;
         try {
             // 记录日志：自动下一题触发
-            writeLog("next", "VALUE_CALLBACK", "答案选中后延迟400ms触发");
-            // 延迟 400ms，确保答案点击动画完成后再点下一题
-            final String nextJs = buildAutoNextJS(400);
+            writeLog("next", "VALUE_CALLBACK", "答案选中后延迟800ms触发");
+            // 延迟 800ms，确保答案点击动画完成后再点下一题
+            final String nextJs = buildAutoNextJS(800);
 
             // evaluateJavascript 注入
             try {
@@ -1311,7 +1311,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                 } catch (Throwable ignored2) {}
             }
 
-            // 点击下一题后，延迟 1.5 秒再主动注入一次自动答题 JS
+            // 点击下一题后，延迟 2.5 秒再主动注入一次自动答题 JS
             // （形成闭环：自动答题→自动下一题→自动注入→自动答题...
             //  即使下一题没有触发新的 API 请求，也能自动检测并选中答案）
             final long scheduleId = sNextReinjectId + 1;
@@ -1324,7 +1324,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                         injectJsIntoWebView(webViewObj, "[auto-next-reinject]");
                     } catch (Throwable ignored) {}
                 }
-            }, 1500);
+            }, 2500);
         } catch (Throwable ignored) {}
     }
 
