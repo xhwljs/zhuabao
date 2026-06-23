@@ -2,6 +2,7 @@ package com.answer.revealer;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -14,6 +15,7 @@ import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -121,23 +123,185 @@ public class MainActivity extends Activity {
     }
 
     private void showThemeSelector() {
-        String[] options = new String[THEME_NAMES.length];
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setBackground(DS_CARD);
+
+        // 标题栏
+        LinearLayout titleBar = new LinearLayout(this);
+        titleBar.setOrientation(LinearLayout.HORIZONTAL);
+        titleBar.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable titleBg = new GradientDrawable();
+        titleBg.setColor(THEME_PRIMARY);
+        titleBar.setBackground(titleBg);
+        titleBar.setPadding(dp(20), dp(16), dp(20), dp(16));
+
+        TextView titleTv = new TextView(this);
+        titleTv.setText("选择主题色");
+        titleTv.setTextSize(18);
+        titleTv.setTextColor(0xFFFFFFFF);
+        titleTv.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleBar.addView(titleTv);
+
+        View titleSpacer = new View(this);
+        titleSpacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
+        titleBar.addView(titleSpacer);
+
+        TextView subtitleTv = new TextView(this);
+        subtitleTv.setText("点击选择");
+        subtitleTv.setTextSize(12);
+        subtitleTv.setTextColor(0xCCFFFFFF);
+        titleBar.addView(subtitleTv);
+
+        content.addView(titleBar);
+
+        // 主题选项列表
+        LinearLayout listContainer = new LinearLayout(this);
+        listContainer.setOrientation(LinearLayout.VERTICAL);
+        listContainer.setPadding(dp(16), dp(16), dp(16), dp(16));
+
         for (int i = 0; i < THEME_NAMES.length; i++) {
-            options[i] = THEME_NAMES[i] + (i == currentTheme ? " ✓" : "");
+            final int themeIndex = i;
+            int[] colors = THEME_COLORS[i];
+
+            // 主题项卡片
+            LinearLayout themeItem = new LinearLayout(this);
+            themeItem.setOrientation(LinearLayout.HORIZONTAL);
+            themeItem.setGravity(Gravity.CENTER_VERTICAL);
+            GradientDrawable itemBg = new GradientDrawable();
+            itemBg.setColor(i == currentTheme ? 0xFFF5F5F5 : DS_CARD);
+            itemBg.setCornerRadius(dp(16));
+            if (i == currentTheme) {
+                itemBg.setStroke(dp(3), THEME_PRIMARY);
+            } else {
+                itemBg.setStroke(dp(1), DS_BORDER);
+            }
+            themeItem.setBackground(itemBg);
+            themeItem.setPadding(dp(16), dp(14), dp(16), dp(14));
+            themeItem.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            ((LinearLayout.LayoutParams) themeItem.getLayoutParams()).bottomMargin = dp(10);
+
+            // 颜色预览圆圈组
+            LinearLayout colorPreview = new LinearLayout(this);
+            colorPreview.setOrientation(LinearLayout.HORIZONTAL);
+            colorPreview.setGravity(Gravity.CENTER_VERTICAL);
+
+            // 主色圆
+            View mainColor = new View(this);
+            GradientDrawable mainGd = new GradientDrawable();
+            mainGd.setShape(GradientDrawable.OVAL);
+            mainGd.setColor(colors[0]);
+            mainColor.setBackground(mainGd);
+            mainColor.setLayoutParams(new LinearLayout.LayoutParams(dp(36), dp(36)));
+            colorPreview.addView(mainColor);
+
+            // 浅色圆
+            View lightColor = new View(this);
+            GradientDrawable lightGd = new GradientDrawable();
+            lightGd.setShape(GradientDrawable.OVAL);
+            lightGd.setColor(colors[1]);
+            lightColor.setBackground(lightGd);
+            LinearLayout.LayoutParams lightLp = new LinearLayout.LayoutParams(dp(28), dp(28));
+            lightLp.leftMargin = -dp(10);
+            lightColor.setLayoutParams(lightLp);
+            colorPreview.addView(lightColor);
+
+            // 背景色圆
+            View bgColor = new View(this);
+            GradientDrawable bgGd = new GradientDrawable();
+            bgGd.setShape(GradientDrawable.OVAL);
+            bgGd.setColor(colors[3]);
+            bgColor.setBackground(bgGd);
+            LinearLayout.LayoutParams bgLp = new LinearLayout.LayoutParams(dp(22), dp(22));
+            bgLp.leftMargin = -dp(8);
+            bgColor.setLayoutParams(bgLp);
+            colorPreview.addView(bgColor);
+
+            themeItem.addView(colorPreview);
+
+            // 主题名称
+            LinearLayout nameContainer = new LinearLayout(this);
+            nameContainer.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            nameLp.leftMargin = dp(16);
+            nameContainer.setLayoutParams(nameLp);
+
+            TextView nameTv = new TextView(this);
+            nameTv.setText(THEME_NAMES[i]);
+            nameTv.setTextSize(16);
+            nameTv.setTextColor(DS_TEXT);
+            nameTv.setTypeface(null, android.graphics.Typeface.BOLD);
+            nameContainer.addView(nameTv);
+
+            // 风格描述
+            String[] desc = {"清澈自然", "生机盎然", "温暖活力", "静谧优雅", "热情浪漫"};
+            TextView descTv = new TextView(this);
+            descTv.setText(desc[i]);
+            descTv.setTextSize(12);
+            descTv.setTextColor(DS_TEXT_SECOND);
+            LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            descLp.topMargin = dp(2);
+            descTv.setLayoutParams(descLp);
+            nameContainer.addView(descTv);
+
+            themeItem.addView(nameContainer);
+
+            // 选中指示器
+            View checkMark = new View(this);
+            if (i == currentTheme) {
+                GradientDrawable checkGd = new GradientDrawable();
+                checkGd.setShape(GradientDrawable.OVAL);
+                checkGd.setColor(THEME_PRIMARY);
+                checkMark.setBackground(checkGd);
+                TextView checkTv = new TextView(this);
+                checkTv.setText("✓");
+                checkTv.setTextSize(14);
+                checkTv.setTextColor(0xFFFFFFFF);
+                checkTv.setGravity(Gravity.CENTER);
+                LinearLayout checkContainer = new LinearLayout(this);
+                checkContainer.setGravity(Gravity.CENTER);
+                checkContainer.setBackground(checkGd);
+                checkContainer.setLayoutParams(new LinearLayout.LayoutParams(dp(28), dp(28)));
+                checkContainer.addView(checkTv);
+                themeItem.addView(checkContainer);
+            } else {
+                themeItem.addView(checkMark);
+                LinearLayout.LayoutParams emptyLp = new LinearLayout.LayoutParams(dp(28), dp(28));
+                checkMark.setLayoutParams(emptyLp);
+            }
+
+            themeItem.setOnClickListener(v -> {
+                currentTheme = themeIndex;
+                saveThemePreference(themeIndex);
+                applyThemeColors();
+                dialog.dismiss();
+                renderFullUI();
+                Toast.makeText(this, "主题已切换为 " + THEME_NAMES[themeIndex], Toast.LENGTH_SHORT).show();
+            });
+
+            listContainer.addView(themeItem);
         }
 
-        new AlertDialog.Builder(this)
-                .setTitle("选择主题色")
-                .setSingleChoiceItems(options, currentTheme, (dialog, which) -> {
-                    currentTheme = which;
-                    saveThemePreference(which);
-                    applyThemeColors();
-                    dialog.dismiss();
-                    renderFullUI();
-                    Toast.makeText(this, "主题已切换为 " + THEME_NAMES[which], Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton("取消", null)
-                .show();
+        // 底部间距
+        View bottomSpacer = new View(this);
+        bottomSpacer.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(8)));
+        listContainer.addView(bottomSpacer);
+
+        content.addView(listContainer);
+
+        dialog.setContentView(content);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            dialog.getWindow().setLayout(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+        dialog.show();
     }
 
     // ============ 骨架屏 ============
