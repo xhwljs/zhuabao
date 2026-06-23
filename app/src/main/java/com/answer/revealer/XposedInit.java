@@ -1076,21 +1076,21 @@ public class XposedInit implements IXposedHookLoadPackage {
         //   - INPUT: 直接 checked=true + change 事件（不再 click，避免 toggle 回 false）
         //   - LABEL: 找关联 input，直接设 checked=true（不依赖 label.click() 的浏览器实现）
         //   - BUTTON/A/其他: click + dispatchEvent
-        sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el||SEL_SET.indexOf(el)>=0)return;SEL_SET.push(el);SEL++;");
+        sb.append("function dc(el){if((!IS_MULTI&&SEL>0)||!el||SEL_SET.indexOf(el)>=0)return;SEL_SET.push(el);");
         sb.append("FOUND=TAG+' tag='+el.tagName+' cls='+(el.className||'')+' txt='+(el.innerText||el.value||'').toString().substring(0,30);");
         sb.append("l('★CLICK! '+FOUND);");
         sb.append("var tn=(el.tagName||'').toUpperCase();");
         // 1) INPUT(radio/checkbox): 只 checked=true + dispatch change，不再 click()
         sb.append("if(tn==='INPUT'){try{el.checked=true;el.setAttribute('checked','checked');}catch(e){}");
         sb.append("try{var cevt;try{cevt=new Event('change',{bubbles:true,cancelable:true});}catch(e2){cevt=D.createEvent('HTMLEvents');cevt.initEvent('change',true,true);}el.dispatchEvent(cevt);}catch(e){}");
-        sb.append("l('DC:INPUT:checked SEL='+SEL);return;}");
+        sb.append("SEL++;l('DC:INPUT:checked SEL='+SEL);return;}");
         // 2) LABEL: 找关联 input（label.for/id 或 label 内嵌套 input），直接设 checked=true
         sb.append("if(tn==='LABEL'){var inp=null;var lf=el.getAttribute?el.getAttribute('for'):null;");
-        sb.append("if(lf){inp=D.getElementById(lf);}if(!inp&&el.querySelector){inp=el.querySelector('input');}if(inp){l('DC:LABEL→input '+inp.tagName+' id='+lf);try{inp.checked=true;inp.setAttribute('checked','checked');}catch(e){}try{var c2;try{c2=new Event('change',{bubbles:true,cancelable:true});}catch(e2){c2=D.createEvent('HTMLEvents');c2.initEvent('change',true,true);}inp.dispatchEvent(c2);}catch(e){}l('DC:LABEL:checked SEL='+SEL);return;}else{l('DC:LABEL无input,尝试click');try{el.click();}catch(e){}l('DC:LABEL:click fallback');}return;}");
+        sb.append("if(lf){inp=D.getElementById(lf);}if(!inp&&el.querySelector){inp=el.querySelector('input');}if(inp){l('DC:LABEL→input '+inp.tagName+' id='+lf);try{inp.checked=true;inp.setAttribute('checked','checked');}catch(e){}try{var c2;try{c2=new Event('change',{bubbles:true,cancelable:true});}catch(e2){c2=D.createEvent('HTMLEvents');c2.initEvent('change',true,true);}inp.dispatchEvent(c2);}catch(e){}SEL++;l('DC:LABEL:checked SEL='+SEL);return;}else{l('DC:LABEL无input,尝试click');try{el.click();}catch(e){}l('DC:LABEL:click fallback');}return;}");
         // 3) BUTTON/A/其他: click + dispatchEvent
         sb.append("try{if(el.click)el.click();}catch(e){}");
         sb.append("try{var evs=['click','mousedown','mouseup','change','input'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi]==='click'||evs[vi].indexOf('mouse')>=0){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
-        sb.append("l('DC:done SEL='+SEL);}");
+        sb.append("SEL++;l('DC:done SEL='+SEL);}");
 
         // fc(el)：从元素向上找可点击的元素。使用 closest() API 精确查找。
         // 找最近的 LABEL (含关联input) 或 INPUT → dc() 点击
@@ -1103,7 +1103,7 @@ public class XposedInit implements IXposedHookLoadPackage {
         // 2) el 的兄弟节点中找（常见：文本和 checkbox 是兄弟）
         sb.append("if(!mf){var pr=el.parentElement;if(pr&&pr.children){for(var bi=0;bi<pr.children.length;bi++){var s=pr.children[bi];if(s===el)continue;try{var sf=s.querySelector?s.querySelector(qm):null;if(sf){mf=sf;break;}}catch(e){}try{var sc=(s.className||'').toString();if(sc.indexOf('check')>=0||sc.indexOf('radio')>=0){mf=s;break;}}catch(e){}}}}");
         // 3) 往上 5 层祖先链，每层内部搜
-        sb.append("if(!mf){var anc=el.parentElement;for(var lv=0;lv<5&&anc;lv++){try{var af=anc.querySelector(am);null;}catch(e){}if(anc.children){for(var ci2=0;ci2<anc.children.length;ci2++){try{var caf=anc.children[ci2].querySelector(am);if(caf){af=caf;break;}}catch(e){}}}if(af){mf=af;break;}anc=anc.parentElement;}}");
+        sb.append("if(!mf){var anc=el.parentElement;for(var lv=0;lv<5&&anc;lv++){if(anc.children){for(var ci=0;ci<anc.children.length;ci++){try{var caf=anc.children[ci].querySelector(qm);if(caf){mf=caf;break;}}catch(e){}}}if(mf)break;anc=anc.parentElement;}}");
         // 4) 找到后设 checked=true
         sb.append("if(mf){l('FC:MULTI 找到checkbox:'+mf.tagName);");
         sb.append("if(mf.tagName&&mf.tagName.toUpperCase()==='INPUT'){try{mf.checked=true;mf.setAttribute('checked','checked');}catch(e){}try{var cme;try{cme=new Event('change',{bubbles:true,cancelable:true});}catch(e2){cme=D.createEvent('HTMLEvents');cme.initEvent('change',true,true);}mf.dispatchEvent(cme);}catch(e){}SEL++;SEL_SET.push(mf);return;}");
