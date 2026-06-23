@@ -70,11 +70,11 @@ public class XposedInit implements IXposedHookLoadPackage {
 
     // 防重：注入成功后的冷却时间（毫秒），冷却期内不允许再次注入（防止多个延迟任务在不同题目上连续触发）
     private static volatile long sLastSuccessTime = 0;
-    private static final long AUTO_SELECT_COOLDOWN_MS = 3000;
+    private static final long AUTO_SELECT_COOLDOWN_MS = 0; // 已禁用，答案去重足够防重
 
-    // 防重：自动下一题冷却时间（防止同一道题多次触发下一题）
+    // 防重：自动下一题冷却时间（已禁用，使用 sNextReinjectId 防重）
     private static volatile long sLastNextTime = 0;
-    private static final long AUTO_NEXT_COOLDOWN_MS = 3000;
+    private static final long AUTO_NEXT_COOLDOWN_MS = 0;
 
     // 防重：自动下一题后重新注入的调度 ID（防止多次调度，只保留最新的）
     private static volatile long sNextReinjectId = 0;
@@ -657,6 +657,8 @@ public class XposedInit implements IXposedHookLoadPackage {
                 sMarkedAnswerText = "【 " + sb.toString() + " 正确答案 】";
                 sCorrectAnswerTimestamp = System.currentTimeMillis();
                 sAlreadyAutoSelected.set(false);
+                // 清理注入记录，允许新答案重新注入（即使答案文本相同也应允许重试）
+                sInjectedAnswers.clear();
                 writeAnswerToProvider(sCorrectAnswerText, sMarkedAnswerText);
 
                 // 答案更新（新题目）时，主动触发一次 JS 注入
@@ -1294,11 +1296,6 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static void triggerAutoNext(final Object webViewObj) {
         if (webViewObj == null) return;
         try {
-            // 下一题冷却时间检查：3秒内不重复触发
-            long now = System.currentTimeMillis();
-            if (now - sLastNextTime < AUTO_NEXT_COOLDOWN_MS) return;
-            sLastNextTime = now;
-
             // 记录日志：自动下一题触发
             writeLog("next", "VALUE_CALLBACK", "答案选中后延迟800ms触发");
             // 延迟 800ms，确保答案点击动画完成后再点下一题
