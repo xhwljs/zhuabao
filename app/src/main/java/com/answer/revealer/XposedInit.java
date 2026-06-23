@@ -68,6 +68,10 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static final java.util.Set<Integer> sInjectedAnswers =
             java.util.Collections.synchronizedSet(new java.util.HashSet<Integer>());
 
+    // 防重：注入成功后的冷却时间（毫秒），冷却期内不允许再次注入（防止多个延迟任务在不同题目上连续触发）
+    private static volatile long sLastSuccessTime = 0;
+    private static final long AUTO_SELECT_COOLDOWN_MS = 5000;
+
     // 防重：onProgressChanged 同一个 WebView 只在第一次达到100%时触发
     private static final java.util.Set<Integer> sProgressDoneWebViews =
             java.util.Collections.synchronizedSet(new java.util.HashSet<Integer>());
@@ -1004,6 +1008,10 @@ public class XposedInit implements IXposedHookLoadPackage {
             // 如果已经成功选中过，就不再重复（防止在选项间乱跳）
             if (sAlreadyAutoSelected.get()) return;
 
+            // 冷却时间检查：上次成功后5秒内不允许再次注入（防止多个延迟任务在不同题目上连续触发）
+            long now = System.currentTimeMillis();
+            if (sLastSuccessTime > 0 && now - sLastSuccessTime < AUTO_SELECT_COOLDOWN_MS) return;
+
             String answerText = sCorrectAnswerText;
             if (answerText == null || answerText.isEmpty()) return;
 
@@ -1039,6 +1047,7 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     // 如果 JS 返回值中显示成功选中，立即标记
                                     if (valStr.contains("SUCCESS") || valStr.contains("SEL=1")) {
                                         sAlreadyAutoSelected.set(true);
+                                        sLastSuccessTime = System.currentTimeMillis();
                                         // 记录日志：提取 FOUND 信息（选中方法）
                                         String methodInfo = "";
                                         int foundIdx = valStr.indexOf("FOUND=");
