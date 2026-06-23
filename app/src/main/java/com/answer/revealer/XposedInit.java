@@ -1150,6 +1150,24 @@ public class XposedInit implements IXposedHookLoadPackage {
 
         sb.append("l('v8 done SEL='+SEL);");
 
+        // === 答案选中验证：如果页面有radio/checkbox但都没选中，说明点击没生效 ===
+        // 防止误判导致提前触发自动下一题
+        sb.append("if(SEL>0){try{");
+        sb.append("var inputs=D.body.querySelectorAll('input[type=radio],input[type=checkbox]');");
+        sb.append("if(inputs&&inputs.length>0){var hasChecked=false;");
+        sb.append("for(var vi=0;vi<inputs.length;vi++){if(inputs[vi].checked){hasChecked=true;break;}}");
+        sb.append("if(!hasChecked){SEL=0;FOUND='VERIFY_FAIL_NO_CHECKED';}");
+        sb.append("}}catch(e){}");
+        // 额外验证：检查是否有 aria-checked=true 的自定义组件
+        sb.append("try{");
+        sb.append("var ariaChecks=D.body.querySelectorAll('[role=radio],[role=checkbox]');");
+        sb.append("if(ariaChecks&&ariaChecks.length>0&&SEL===0){var ariaOk=false;");
+        sb.append("for(var ai=0;ai<ariaChecks.length;ai++){var ac=ariaChecks[ai].getAttribute&&ariaChecks[ai].getAttribute('aria-checked');");
+        sb.append("if(ac==='true'||ac==='mixed'){ariaOk=true;break;}}");
+        sb.append("if(!ariaOk){SEL=0;}");
+        sb.append("}}catch(e){}");
+        sb.append("}");
+
         // === 关键：在 try 块内返回明确格式的字符串！===
         // 这是 evaluateJavascript 的 ValueCallback 会捕获的值
         sb.append("return(SEL>0?'[ANSWER]SUCCESS|'+TAG+'|SEL='+SEL+'|FOUND='+FOUND:'[ANSWER]FAIL|'+TAG+'|SEL=0');");
@@ -1259,9 +1277,23 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("}");
         sb.append("return null;}");
 
-        // 执行查找并点击
+        // 执行查找并点击（先验证答案已选中，防止误触发）
         sb.append("function tryClick(){");
         sb.append("if(window.__AR_NEXT_CLICKED)return;");
+        // 验证答案是否已选中：检查 radio/checkbox 的 checked 状态
+        sb.append("var ansChecked=false;try{");
+        sb.append("var inputs=D.body.querySelectorAll('input[type=radio],input[type=checkbox]');");
+        sb.append("if(inputs&&inputs.length>0){for(var ii=0;ii<inputs.length;ii++){if(inputs[ii].checked){ansChecked=true;break;}}}");
+        // 额外检查 aria-checked 自定义组件
+        sb.append("if(!ansChecked){var acs=D.body.querySelectorAll('[role=radio],[role=checkbox]');");
+        sb.append("if(acs&&acs.length>0){for(var ai=0;ai<acs.length;ai++){var av=acs[ai].getAttribute&&acs[ai].getAttribute('aria-checked');");
+        sb.append("if(av==='true'||av==='mixed'){ansChecked=true;break;}}}");
+        sb.append("}}catch(e){}");
+        // 如果有选项但都没选中，说明答案还没选好，不触发下一题
+        sb.append("var hasOptions=false;try{");
+        sb.append("hasOptions=(D.body.querySelectorAll('input[type=radio],input[type=checkbox],[role=radio],[role=checkbox]').length>0);");
+        sb.append("}catch(e){}");
+        sb.append("if(hasOptions&&!ansChecked){return false;}");
         sb.append("var el=null;");
         sb.append("if(!el)el=findByText();");
         sb.append("if(!el)el=findByAttr();");
