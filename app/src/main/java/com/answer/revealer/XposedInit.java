@@ -61,8 +61,16 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static volatile String sMarkedAnswerText = null;
     // 记录上次更新答案的时间戳（防止使用过期答案）
     private static volatile long sCorrectAnswerTimestamp = 0;
-    // 已自动选中标志（防止重复点击其他选项）
+    // 防重标志：是否已经成功自动选中过答案（整个应用生命周期）
     private static final java.util.concurrent.atomic.AtomicBoolean sAlreadyAutoSelected = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    // 防重：记录已注入过的答案哈希（同一个答案只注入一次，新答案自动重置）
+    private static final java.util.Set<Integer> sInjectedAnswers =
+            java.util.Collections.synchronizedSet(new java.util.HashSet<Integer>());
+
+    // 防重：onProgressChanged 同一个 WebView 只在第一次达到100%时触发
+    private static final java.util.Set<Integer> sProgressDoneWebViews =
+            java.util.Collections.synchronizedSet(new java.util.HashSet<Integer>());
 
     // ContentProvider URI - 答案文本
     private static final Uri PROVIDER_ANSWER_URI = Uri.parse("content://com.answer.revealer.stats/answer");
@@ -903,9 +911,14 @@ public class XposedInit implements IXposedHookLoadPackage {
                         protected void afterHookedMethod(final MethodHookParam param) {
                             try {
                                 int progress = (Integer) param.args[1];
-                                if (progress < 80) return; // 只在页面快加载完时才注入
+                                if (progress < 100) return; // 只在100%时注入
                                 final Object webView = param.args[0];
                                 if (webView == null) return;
+                                // 同一个 WebView 只在第一次达到100%时触发
+                                int wvId = System.identityHashCode(webView);
+                                if (sProgressDoneWebViews.contains(wvId)) return;
+                                sProgressDoneWebViews.add(wvId);
+
                                 new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
                                     @Override public void run() {
                                         injectJsIntoWebView(webView, "[onProgressChanged-100-" + progress + "%]");
@@ -996,6 +1009,11 @@ public class XposedInit implements IXposedHookLoadPackage {
 
             long age = System.currentTimeMillis() - sCorrectAnswerTimestamp;
             if (sCorrectAnswerTimestamp > 0 && age > 30000) return;
+
+            // 同一个答案只注入一次（防止同一页面多个回调点重复注入）
+            int answerHash = answerText.hashCode();
+            if (sInjectedAnswers.contains(answerHash)) return;
+            sInjectedAnswers.add(answerHash);
 
             // 构建 JS 参数
             String markerText = sMarkedAnswerText != null ? sMarkedAnswerText : ("【 " + answerText + " 正确答案 】");
