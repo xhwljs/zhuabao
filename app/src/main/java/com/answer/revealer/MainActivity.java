@@ -1,7 +1,6 @@
 package com.answer.revealer;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.ContentValues;
 import android.content.Intent;
@@ -908,27 +907,20 @@ public class MainActivity extends Activity {
     }
 
     private void showClearConfirm() {
-        new AlertDialog.Builder(this)
-                .setTitle("清空统计记录")
-                .setMessage("确定要清空所有统计和请求记录吗？")
-                .setPositiveButton("清空", (d, w) -> {
-                    try {
-                        SharedPreferences selfSp = getSharedPreferences("module_stats", MODE_PRIVATE);
-                        boolean savedAuto = selfSp.getBoolean("auto_select_enabled", false);
-                        boolean savedNext = selfSp.getBoolean("auto_next_enabled", false);
-                        try {
-                            getContentResolver().delete(Uri.parse("content://" + MODULE_PACKAGE + ".stats/clear"), null, null);
-                        } catch (Throwable ignored) {}
-                        selfSp.edit().clear()
-                                .putBoolean("auto_select_enabled", savedAuto)
-                                .putBoolean("auto_next_enabled", savedNext)
-                                .apply();
-                    } catch (Throwable t) {}
-                    Toast.makeText(this, "已清空", Toast.LENGTH_SHORT).show();
-                    refreshStatsAsync();
-                })
-                .setNegativeButton("取消", null)
-                .show();
+        try {
+            SharedPreferences selfSp = getSharedPreferences("module_stats", MODE_PRIVATE);
+            boolean savedAuto = selfSp.getBoolean("auto_select_enabled", false);
+            boolean savedNext = selfSp.getBoolean("auto_next_enabled", false);
+            try {
+                getContentResolver().delete(Uri.parse("content://" + MODULE_PACKAGE + ".stats/clear"), null, null);
+            } catch (Throwable ignored) {}
+            selfSp.edit().clear()
+                    .putBoolean("auto_select_enabled", savedAuto)
+                    .putBoolean("auto_next_enabled", savedNext)
+                    .apply();
+        } catch (Throwable t) {}
+        Toast.makeText(this, "已清空", Toast.LENGTH_SHORT).show();
+        refreshStatsAsync();
     }
 
     private void launchTargetApp() {
