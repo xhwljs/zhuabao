@@ -48,7 +48,6 @@ public class StatsProvider extends ContentProvider {
     public static final String KEY_TARGET_HIT_COUNT = "target_hit_count";
     public static final String KEY_LAST_TIME = "last_hook_time";
     public static final String KEY_MODULE_ACTIVE = "module_active_v1";
-    public static final String KEY_DETECTED_CLIENTS = "detected_clients";
     public static final String KEY_PKG_HOOKED = "package_hooked";
     public static final String KEY_AUTO_SELECT = "auto_select_enabled";
     public static final String KEY_AUTO_NEXT = "auto_next_enabled";
@@ -59,7 +58,6 @@ public class StatsProvider extends ContentProvider {
             KEY_TARGET_HIT_COUNT,
             KEY_LAST_TIME,
             KEY_MODULE_ACTIVE,
-            KEY_DETECTED_CLIENTS,
             KEY_PKG_HOOKED,
             KEY_AUTO_SELECT,
             KEY_AUTO_NEXT
@@ -151,10 +149,6 @@ public class StatsProvider extends ContentProvider {
                         SharedPreferences.Editor editor = sp.edit();
                         editor.putLong(KEY_TARGET_HIT_COUNT, (long) targetHitCount);
                         editor.putLong(KEY_LAST_TIME, targetSp.getLong(KEY_LAST_TIME, 0));
-                        String clients = targetSp.getString(KEY_DETECTED_CLIENTS, "");
-                        if (clients != null && !clients.isEmpty()) {
-                            editor.putString(KEY_DETECTED_CLIENTS, clients);
-                        }
                         editor.putBoolean(KEY_AUTO_SELECT, targetSp.getBoolean(KEY_AUTO_SELECT, false));
                         editor.apply();
 
@@ -179,7 +173,7 @@ public class StatsProvider extends ContentProvider {
             }
 
             for (String key : ALL_KEYS) {
-                if (KEY_DETECTED_CLIENTS.equals(key) || KEY_PKG_HOOKED.equals(key)) {
+                if (KEY_PKG_HOOKED.equals(key)) {
                     String v = sp.getString(key, "");
                     cursor.newRow().add(key).add((long) (v == null || v.isEmpty() ? 0 : v.split("\n").length)).add(v == null ? "" : v);
                 } else if (KEY_MODULE_ACTIVE.equals(key) || KEY_AUTO_SELECT.equals(key) || KEY_AUTO_NEXT.equals(key)) {

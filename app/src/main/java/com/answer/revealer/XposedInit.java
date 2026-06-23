@@ -17,10 +17,8 @@ import java.io.ByteArrayInputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -50,25 +48,6 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static final String CONFIG_KEY_AUTO_NEXT = "auto_next_enabled";
     private static final String CONFIG_SP_NAME = "answer_revealer_status";
     private static final String ANSWER_MARKER = "正确答案";
-
-    // HTTP 客户端类扫描列表
-    private static final String[] HTTP_CLIENT_CLASS_NAMES = {
-            "okhttp3.OkHttpClient",
-            "okhttp3.RealCall",
-            "okhttp3.internal.connection.RealCall",
-            "okhttp3.Request",
-            "okhttp3.Response",
-            "retrofit2.Retrofit",
-            "com.android.volley.toolbox.Volley",
-            "com.android.volley.toolbox.StringRequest",
-            "android.webkit.WebView",
-            "android.webkit.WebViewClient",
-            "io.flutter.embedding.engine.FlutterEngine",
-            "com.facebook.react.ReactInstanceManager",
-            "org.apache.cordova.CordovaWebView",
-            "com.tencent.smtt.sdk.WebView",
-            "com.tencent.smtt.sdk.WebViewClient"
-    };
 
     private static final java.util.Set<String> initializedPackages =
             Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
@@ -164,10 +143,9 @@ public class XposedInit implements IXposedHookLoadPackage {
                     try {
                         setupNetworkHooks(cl);
                         setupAutoSelectHooks(cl);
-                        List<String> clients = scanHttpClients(cl);
 
-                        // 写入 ContentProvider（不再写 hook 安装数量
-                        writeStatsToProvider(PROVIDER_URI, clients);
+                        // 写入 ContentProvider
+                        writeStatsToProvider(PROVIDER_URI);
 
                         // Toast 提示
 
@@ -716,19 +694,6 @@ public class XposedInit implements IXposedHookLoadPackage {
         }
     }
 
-    private static List<String> scanHttpClients(ClassLoader cl) {
-        List<String> result = new ArrayList<>();
-        try {
-            for (String className : HTTP_CLIENT_CLASS_NAMES) {
-                try {
-                    Class.forName(className, false, cl);
-                    result.add(className);
-                } catch (Throwable ignored) {}
-            }
-        } catch (Throwable ignored) {}
-        return result;
-    }
-
     // ============ 自动选中答案：读取开关状态 ============
     private static boolean readAutoSelectEnabled() {
         try {
@@ -1275,7 +1240,7 @@ public class XposedInit implements IXposedHookLoadPackage {
     }
 
     // ============ 写入 ContentProvider ============
-    private static void writeStatsToProvider(Uri uri, List<String> clients) {
+    private static void writeStatsToProvider(Uri uri) {
         try {
             Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
             if (ctx == null) return;
@@ -1284,12 +1249,6 @@ public class XposedInit implements IXposedHookLoadPackage {
             values.put("last_hook_time", System.currentTimeMillis());
             values.put("package_hooked", TARGET_PACKAGE);
             values.put("target_hit_count", targetHitCounter.get());
-
-            if (clients != null && !clients.isEmpty()) {
-                StringBuilder sb = new StringBuilder();
-                for (String s : clients) sb.append(s).append("\n");
-                values.put("detected_clients", sb.toString());
-            }
 
             // 跨进程 ContentProvider 写入偶尔会失败，最多重试 3 次
             boolean success = false;
@@ -1311,15 +1270,10 @@ public class XposedInit implements IXposedHookLoadPackage {
                 if (ctx != null) {
                     android.content.SharedPreferences sp = ctx.getSharedPreferences("answer_revealer_status",
                             Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
-                    android.content.SharedPreferences.Editor editor = sp.edit();
-                    editor.putLong("last_hook_time", System.currentTimeMillis());
-                    editor.putInt("target_hit_count", targetHitCounter.get());
-                    if (clients != null && !clients.isEmpty()) {
-                        StringBuilder sb = new StringBuilder();
-                        for (String s : clients) sb.append(s).append("\n");
-                        editor.putString("detected_clients", sb.toString());
-                    }
-                    editor.apply();
+                    sp.edit()
+                            .putLong("last_hook_time", System.currentTimeMillis())
+                            .putInt("target_hit_count", targetHitCounter.get())
+                            .apply();
                 }
             } catch (Throwable ignored) {}
         }

@@ -147,10 +147,7 @@ public class MainActivity extends Activity {
         // 4. 统计数据（紧凑三列）
         addStatsCard(root);
 
-        // 5. HTTP 客户端
-        addHttpClientsCard(root);
-
-        // 6. 工作原理
+        // 5. 工作原理
         addInfoCard(root);
 
         sv.addView(root);
@@ -546,85 +543,6 @@ public class MainActivity extends Activity {
         parent.addView(div);
     }
 
-    // ============ HTTP 客户端卡片 ============
-    private void addHttpClientsCard(LinearLayout root) {
-        String raw = mData != null ? mData.detectedClients : "";
-        if (raw == null) raw = "";
-        List<String> clients = new ArrayList<>();
-        if (!raw.trim().isEmpty()) {
-            for (String s : raw.split("\n")) {
-                if (s != null && s.trim().length() > 0) clients.add(s.trim());
-            }
-        }
-
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable gd = new GradientDrawable();
-        gd.setColor(DS_CARD);
-        gd.setCornerRadius(dp(16));
-        gd.setStroke(dp(1), DS_BORDER);
-        card.setBackground(gd);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-
-        TextView title = new TextView(this);
-        title.setText("HTTP 客户端" + (!clients.isEmpty() ? "  " + clients.size() + " 个" : ""));
-        title.setTextSize(12);
-        title.setTextColor(DS_TEXT);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        card.addView(title);
-
-        if (!clients.isEmpty()) {
-            LinearLayout chipRow = new LinearLayout(this);
-            chipRow.setOrientation(LinearLayout.HORIZONTAL);
-            chipRow.setGravity(Gravity.CENTER_VERTICAL);
-            LinearLayout.LayoutParams crLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            crLp.topMargin = dp(8);
-            chipRow.setLayoutParams(crLp);
-
-            for (int i = 0; i < Math.min(clients.size(), 3); i++) {
-                LinearLayout chip = new LinearLayout(this);
-                chip.setGravity(Gravity.CENTER);
-                GradientDrawable chGd = new GradientDrawable();
-                chGd.setColor(DS_CARD_SOFT);
-                chGd.setCornerRadius(dp(100));
-                chip.setBackground(chGd);
-                chip.setPadding(dp(8), dp(4), dp(8), dp(4));
-
-                TextView chTv = new TextView(this);
-                String shortName = clients.get(i);
-                if (shortName.length() > 12) shortName = shortName.substring(0, 12) + "…";
-                chTv.setText(shortName);
-                chTv.setTextSize(10);
-                chTv.setTextColor(DS_PRIMARY);
-                chip.addView(chTv);
-
-                LinearLayout.LayoutParams chLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                chLp.rightMargin = dp(6);
-                chip.setLayoutParams(chLp);
-                chipRow.addView(chip);
-            }
-            if (clients.size() > 3) {
-                TextView more = new TextView(this);
-                more.setText("+" + (clients.size() - 3));
-                more.setTextSize(10);
-                more.setTextColor(DS_TEXT_MUTED);
-                chipRow.addView(more);
-            }
-            card.addView(chipRow);
-        } else {
-            TextView empty = new TextView(this);
-            empty.setText("尚未检测到 HTTP 客户端");
-            empty.setTextSize(11);
-            empty.setTextColor(DS_TEXT_MUTED);
-            LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            ep.topMargin = dp(8);
-            empty.setLayoutParams(ep);
-            card.addView(empty);
-        }
-
-        root.addView(card, cardParams());
-    }
-
     // ============ 工作原理卡片 ============
     private void addInfoCard(LinearLayout root) {
         LinearLayout card = new LinearLayout(this);
@@ -797,7 +715,6 @@ public class MainActivity extends Activity {
         boolean moduleActive = false;
         int targetHitCount = -1;
         long lastHookTime = -1;
-        String detectedClients = "";
         boolean autoSelectEnabled = false;
         boolean autoSelectLoaded = false;
         boolean autoNextEnabled = false;
@@ -819,7 +736,6 @@ public class MainActivity extends Activity {
                     try { valueStr = cursor.getString(cursor.getColumnIndex("value_str")); } catch (Throwable ignored) {}
                     if ("target_hit_count".equals(key)) data.targetHitCount = (int) value;
                     else if ("last_hook_time".equals(key)) data.lastHookTime = value;
-                    else if ("detected_clients".equals(key)) data.detectedClients = valueStr != null ? valueStr : "";
                     else if ("auto_select_enabled".equals(key)) {
                         data.autoSelectEnabled = value > 0 || "1".equals(valueStr) || "true".equalsIgnoreCase(valueStr);
                         data.autoSelectLoaded = true;
