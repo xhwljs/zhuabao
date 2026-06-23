@@ -265,6 +265,45 @@ public class StatsProvider extends ContentProvider {
                 return uri;
             }
 
+            if ("log".equals(path)) {
+                // 写入一条日志记录
+                String type = values.getAsString("type");
+                String method = values.getAsString("method");
+                String detail = values.getAsString("detail");
+                if (type == null) type = "unknown";
+                if (method == null) method = "";
+                if (detail == null) detail = "";
+
+                int counter = sp.getInt(KEY_LOG_COUNTER, 0) + 1;
+                String key = LOG_PREFIX + String.format("%05d", counter)
+                        + "_" + System.currentTimeMillis();
+                SharedPreferences.Editor editor = sp.edit();
+                editor.putString(key, type + "|" + method + "|" + detail);
+                editor.putInt(KEY_LOG_COUNTER, counter);
+                editor.putLong(KEY_LAST_TIME, System.currentTimeMillis());
+
+                // 限制日志数量，最多保留 200 条，超出删除最旧的
+                int logCount = 0;
+                List<String> oldLogKeys = new ArrayList<>();
+                for (String k : sp.getAll().keySet()) {
+                    if (k != null && k.startsWith(LOG_PREFIX)) {
+                        logCount++;
+                        oldLogKeys.add(k);
+                    }
+                }
+                if (logCount > 200) {
+                    Collections.sort(oldLogKeys);
+                    int removeCount = logCount - 200;
+                    for (int i = 0; i < removeCount && i < oldLogKeys.size(); i++) {
+                        editor.remove(oldLogKeys.get(i));
+                    }
+                }
+
+                editor.apply();
+                try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
+                return uri;
+            }
+
             // 通用插入
             writeValues(sp, values);
             try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
@@ -297,6 +336,22 @@ public class StatsProvider extends ContentProvider {
                 }
                 try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
                 return count;
+            }
+
+            if ("log_clear".equals(path)) {
+                // 只清空日志记录，保留其他数据
+                int removed = 0;
+                SharedPreferences.Editor editor = sp.edit();
+                for (String key : sp.getAll().keySet()) {
+                    if (key != null && key.startsWith(LOG_PREFIX)) {
+                        editor.remove(key);
+                        removed++;
+                    }
+                }
+                editor.remove(KEY_LOG_COUNTER);
+                editor.apply();
+                try { getContext().getContentResolver().notifyChange(uri, null); } catch (Throwable ignored) {}
+                return removed;
             }
 
             // 删除指定 key 的请求（selection = "key=?"）

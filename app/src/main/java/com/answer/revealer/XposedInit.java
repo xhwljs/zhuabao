@@ -42,6 +42,7 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static final Uri PROVIDER_URI = Uri.parse("content://com.answer.revealer.stats/update");
     private static final Uri PROVIDER_REQUEST_URI = Uri.parse("content://com.answer.revealer.stats/request");
     private static final Uri PROVIDER_QUERY_URI = Uri.parse("content://com.answer.revealer.stats/query");
+    private static final Uri PROVIDER_LOG_URI = Uri.parse("content://com.answer.revealer.stats/log");
 
     // 配置
     private static final String CONFIG_KEY_AUTO_SELECT = "auto_select_enabled";
@@ -764,6 +765,38 @@ public class XposedInit implements IXposedHookLoadPackage {
         return false;
     }
 
+    // ============ 写入日志记录 ============
+    private static void writeLog(final String type, final String method, final String detail) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
+                    if (ctx == null) return;
+                    ContentValues values = new ContentValues();
+                    values.put("type", type);
+                    values.put("method", method);
+                    values.put("detail", detail != null ? detail : "");
+                    ctx.getContentResolver().insert(PROVIDER_LOG_URI, values);
+                } catch (Throwable ignored) {}
+            }
+        }).start();
+    }
+
+    // ============ 从 JS 返回值提取 SEL 数量 ============
+    private static String extractSelCount(String valStr) {
+        try {
+            int idx = valStr.indexOf("SEL=");
+            if (idx >= 0) {
+                String rest = valStr.substring(idx + 4);
+                int end = rest.indexOf("|");
+                if (end >= 0) rest = rest.substring(0, end);
+                return rest.trim();
+            }
+        } catch (Throwable ignored) {}
+        return "1";
+    }
+
     // ============ 安装自动选中 Hook ============
     private void setupAutoSelectHooks(final ClassLoader cl) {
         // === 1. WebChromeClient.onConsoleMessage（新版API）===
@@ -988,6 +1021,16 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     // 如果 JS 返回值中显示成功选中，立即标记
                                     if (valStr.contains("SUCCESS") || valStr.contains("SEL=1")) {
                                         sAlreadyAutoSelected.set(true);
+                                        // 记录日志：提取 FOUND 信息（选中方法）
+                                        String methodInfo = "";
+                                        int foundIdx = valStr.indexOf("FOUND=");
+                                        if (foundIdx >= 0) {
+                                            methodInfo = valStr.substring(foundIdx + 6);
+                                            int pipeIdx = methodInfo.indexOf("|");
+                                            if (pipeIdx >= 0) methodInfo = methodInfo.substring(0, pipeIdx);
+                                        }
+                                        writeLog("answer", methodInfo.isEmpty() ? "SUCCESS" : methodInfo,
+                                                "SEL=" + (valStr.contains("SEL=") ? extractSelCount(valStr) : "1"));
                                         // 答案选中成功后，触发自动下一题（模块化调用）
                                         if (autoNext) {
                                             triggerAutoNext(webViewObj);
@@ -1184,6 +1227,8 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static void triggerAutoNext(final Object webViewObj) {
         if (webViewObj == null) return;
         try {
+            // 记录日志：自动下一题触发
+            writeLog("next", "VALUE_CALLBACK", "答案选中后延迟800ms触发");
             // 延迟 800ms，确保答案点击动画完成后再点下一题
             final String nextJs = buildAutoNextJS(800);
 

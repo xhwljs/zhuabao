@@ -368,7 +368,10 @@ public class MainActivity extends Activity {
         // 4. 统计数据卡片（两列数据）
         addStatsCard(root);
 
-        // 5. 工作原理卡片
+        // 5. 日志记录卡片
+        addLogCard(root);
+
+        // 6. 工作原理卡片
         addInfoCard(root);
 
         sv.addView(root);
@@ -795,6 +798,296 @@ public class MainActivity extends Activity {
         parent.addView(div);
     }
 
+    // ============ 日志记录卡片 ============
+    private void addLogCard(LinearLayout root) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable gd = new GradientDrawable();
+        gd.setColor(DS_CARD);
+        gd.setCornerRadius(dp(20));
+        gd.setStroke(dp(1), DS_BORDER);
+        card.setBackground(gd);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+        // 标题行
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView title = new TextView(this);
+        title.setText("运行日志");
+        title.setTextSize(13);
+        title.setTextColor(DS_TEXT);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleRow.addView(title);
+
+        View spacer = new View(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
+        titleRow.addView(spacer);
+
+        TextView hintTv = new TextView(this);
+        hintTv.setText("查看详细记录");
+        hintTv.setTextSize(11);
+        hintTv.setTextColor(DS_TEXT_MUTED);
+        titleRow.addView(hintTv);
+
+        card.addView(titleRow);
+
+        // 按钮行
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams brLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        brLp.topMargin = dp(12);
+        btnRow.setLayoutParams(brLp);
+
+        View btn1 = buildButton("查看日志", THEME_PRIMARY, v -> showLogDialog());
+        btn1.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        btnRow.addView(btn1);
+
+        View s1 = new View(this);
+        s1.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 1));
+        btnRow.addView(s1);
+
+        View btn2 = buildButton("清空日志", DS_ERROR, v -> clearLogs());
+        btn2.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        btnRow.addView(btn2);
+
+        card.addView(btnRow);
+        root.addView(card, cardParams());
+    }
+
+    // ============ 日志对话框 ============
+    private void showLogDialog() {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setBackgroundColor(DS_CARD);
+
+        // 标题栏
+        LinearLayout titleBar = new LinearLayout(this);
+        titleBar.setOrientation(LinearLayout.HORIZONTAL);
+        titleBar.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable titleBg = new GradientDrawable();
+        titleBg.setColor(THEME_PRIMARY);
+        titleBar.setBackground(titleBg);
+        titleBar.setPadding(dp(20), dp(16), dp(20), dp(16));
+
+        TextView titleTv = new TextView(this);
+        titleTv.setText("运行日志");
+        titleTv.setTextSize(18);
+        titleTv.setTextColor(0xFFFFFFFF);
+        titleTv.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleBar.addView(titleTv);
+
+        View titleSpacer = new View(this);
+        titleSpacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
+        titleBar.addView(titleSpacer);
+
+        // 复制按钮
+        LinearLayout copyBtn = new LinearLayout(this);
+        copyBtn.setGravity(Gravity.CENTER);
+        GradientDrawable copyGd = new GradientDrawable();
+        copyGd.setColor(0x33FFFFFF);
+        copyGd.setCornerRadius(dp(100));
+        copyBtn.setBackground(copyGd);
+        copyBtn.setPadding(dp(12), dp(6), dp(12), dp(6));
+        copyBtn.setOnClickListener(v -> copyLogsToClipboard());
+
+        TextView copyTv = new TextView(this);
+        copyTv.setText("复制");
+        copyTv.setTextSize(11);
+        copyTv.setTextColor(0xFFFFFFFF);
+        copyTv.setTypeface(null, android.graphics.Typeface.BOLD);
+        copyBtn.addView(copyTv);
+        titleBar.addView(copyBtn);
+
+        content.addView(titleBar);
+
+        // 日志列表容器（ScrollView）
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(400)));
+
+        final LinearLayout logList = new LinearLayout(this);
+        logList.setOrientation(LinearLayout.VERTICAL);
+        logList.setPadding(dp(12), dp(8), dp(12), dp(8));
+
+        // 加载日志数据
+        new Thread(() -> {
+            final java.util.ArrayList<LogItem> logs = loadLogData();
+            mHandler.post(() -> {
+                if (logs == null || logs.isEmpty()) {
+                    TextView emptyTv = new TextView(this);
+                    emptyTv.setText("暂无日志记录");
+                    emptyTv.setTextSize(13);
+                    emptyTv.setTextColor(DS_TEXT_MUTED);
+                    emptyTv.setGravity(Gravity.CENTER);
+                    emptyTv.setPadding(0, dp(40), 0, dp(40));
+                    logList.addView(emptyTv);
+                } else {
+                    for (LogItem item : logs) {
+                        View logItem = buildLogItem(item);
+                        logList.addView(logItem);
+                    }
+                }
+            });
+        }).start();
+
+        scrollView.addView(logList);
+        content.addView(scrollView);
+
+        // 底部按钮栏
+        LinearLayout bottomBar = new LinearLayout(this);
+        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
+        bottomBar.setGravity(Gravity.CENTER);
+        bottomBar.setPadding(dp(16), dp(12), dp(16), dp(16));
+        bottomBar.setBackgroundColor(DS_CARD_SOFT);
+
+        View closeBtn = buildButton("关闭", DS_GRAY, v -> dialog.dismiss());
+        closeBtn.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        bottomBar.addView(closeBtn);
+
+        content.addView(bottomBar);
+
+        dialog.setContentView(content);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            dialog.getWindow().setLayout(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+        dialog.show();
+    }
+
+    // ============ 构建日志条目 ============
+    private View buildLogItem(LogItem item) {
+        LinearLayout itemView = new LinearLayout(this);
+        itemView.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(DS_CARD);
+        bg.setCornerRadius(dp(12));
+        bg.setStroke(dp(1), DS_BORDER);
+        itemView.setBackground(bg);
+        itemView.setPadding(dp(12), dp(10), dp(12), dp(10));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(6);
+        itemView.setLayoutParams(lp);
+
+        // 第一行：类型标签 + 时间
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.setGravity(Gravity.CENTER_VERTICAL);
+
+        // 类型标签
+        TextView typeTv = new TextView(this);
+        boolean isAnswer = "answer".equals(item.type);
+        typeTv.setText(isAnswer ? "自动答题" : "下一题");
+        typeTv.setTextSize(11);
+        typeTv.setTextColor(0xFFFFFFFF);
+        typeTv.setGravity(Gravity.CENTER);
+        typeTv.setTypeface(null, android.graphics.Typeface.BOLD);
+        GradientDrawable typeBg = new GradientDrawable();
+        typeBg.setColor(isAnswer ? THEME_PRIMARY : DS_ACCENT);
+        typeBg.setCornerRadius(dp(6));
+        typeTv.setBackground(typeBg);
+        typeTv.setPadding(dp(8), dp(3), dp(8), dp(3));
+        row1.addView(typeTv);
+
+        View s1 = new View(this);
+        s1.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
+        row1.addView(s1);
+
+        TextView timeTv = new TextView(this);
+        timeTv.setText(formatLogTime(item.time));
+        timeTv.setTextSize(11);
+        timeTv.setTextColor(DS_TEXT_MUTED);
+        row1.addView(timeTv);
+
+        itemView.addView(row1);
+
+        // 第二行：方法
+        if (item.method != null && !item.method.isEmpty()) {
+            TextView methodTv = new TextView(this);
+            methodTv.setText("方法: " + item.method);
+            methodTv.setTextSize(12);
+            methodTv.setTextColor(DS_TEXT);
+            LinearLayout.LayoutParams mtLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            mtLp.topMargin = dp(6);
+            methodTv.setLayoutParams(mtLp);
+            itemView.addView(methodTv);
+        }
+
+        // 第三行：详情
+        if (item.detail != null && !item.detail.isEmpty()) {
+            TextView detailTv = new TextView(this);
+            detailTv.setText("详情: " + item.detail);
+            detailTv.setTextSize(11);
+            detailTv.setTextColor(DS_TEXT_SECOND);
+            LinearLayout.LayoutParams dtLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            dtLp.topMargin = dp(2);
+            detailTv.setLayoutParams(dtLp);
+            itemView.addView(detailTv);
+        }
+
+        return itemView;
+    }
+
+    // ============ 格式化日志时间 ============
+    private String formatLogTime(long time) {
+        if (time <= 0) return "";
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("MM-dd HH:mm:ss");
+        return sdf.format(new java.util.Date(time));
+    }
+
+    // ============ 复制日志到剪贴板 ============
+    private void copyLogsToClipboard() {
+        new Thread(() -> {
+            final java.util.ArrayList<LogItem> logs = loadLogData();
+            mHandler.post(() -> {
+                try {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("=== 运行日志 ===\n\n");
+                    for (LogItem item : logs) {
+                        sb.append("[").append(formatLogTime(item.time)).append("] ");
+                        sb.append("answer".equals(item.type) ? "[自动答题]" : "[下一题]");
+                        sb.append(" 方法: ").append(item.method != null ? item.method : "");
+                        if (item.detail != null && !item.detail.isEmpty()) {
+                            sb.append(" 详情: ").append(item.detail);
+                        }
+                        sb.append("\n");
+                    }
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                            getSystemService(CLIPBOARD_SERVICE);
+                    if (cm != null) {
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("logs", sb.toString()));
+                    }
+                    Toast.makeText(this, "日志已复制到剪贴板", Toast.LENGTH_SHORT).show();
+                } catch (Throwable e) {
+                    Toast.makeText(this, "复制失败", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }).start();
+    }
+
+    // ============ 清空日志 ============
+    private void clearLogs() {
+        try {
+            getContentResolver().delete(
+                    Uri.parse("content://" + MODULE_PACKAGE + ".stats/log_clear"),
+                    null, null);
+            Toast.makeText(this, "日志已清空", Toast.LENGTH_SHORT).show();
+        } catch (Throwable t) {
+            Toast.makeText(this, "清空失败", Toast.LENGTH_SHORT).show();
+        }
+    }
+
     // ============ 工作原理卡片 ============
     private void addInfoCard(LinearLayout root) {
         LinearLayout card = new LinearLayout(this);
@@ -965,6 +1258,43 @@ public class MainActivity extends Activity {
         boolean autoSelectLoaded = false;
         boolean autoNextEnabled = false;
         boolean autoNextLoaded = false;
+    }
+
+    // ============ 日志数据模型 ============
+    private static class LogItem {
+        int id;
+        String type;
+        String method;
+        String detail;
+        long time;
+    }
+
+    // ============ 加载日志数据 ============
+    private java.util.ArrayList<LogItem> loadLogData() {
+        java.util.ArrayList<LogItem> list = new java.util.ArrayList<>();
+        Cursor cursor = null;
+        try {
+            cursor = getContentResolver().query(
+                    Uri.parse("content://" + MODULE_PACKAGE + ".stats/log"),
+                    null, null, null, null);
+            if (cursor != null && cursor.moveToFirst()) {
+                do {
+                    try {
+                        LogItem item = new LogItem();
+                        item.id = cursor.getInt(cursor.getColumnIndex("_id"));
+                        item.type = cursor.getString(cursor.getColumnIndex("type"));
+                        item.method = cursor.getString(cursor.getColumnIndex("method"));
+                        item.detail = cursor.getString(cursor.getColumnIndex("detail"));
+                        item.time = cursor.getLong(cursor.getColumnIndex("time"));
+                        list.add(item);
+                    } catch (Throwable ignored) {}
+                } while (cursor.moveToNext());
+            }
+        } catch (Throwable ignored) {
+        } finally {
+            if (cursor != null) try { cursor.close(); } catch (Throwable ignored) {}
+        }
+        return list;
     }
 
     private StatsData loadStatsData() {
