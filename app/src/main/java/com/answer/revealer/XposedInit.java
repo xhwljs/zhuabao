@@ -950,7 +950,7 @@ public class XposedInit implements IXposedHookLoadPackage {
     }
 
     // ============ 统一的 JS 注入入口（核心：多渠道返回执行结果到LSPosed日志） ============
-    private static void injectJsIntoWebView(Object webViewObj, final String sourceTag) {
+    private static void injectJsIntoWebView(final Object webViewObj, final String sourceTag) {
         try {
             if (!readAutoSelectEnabled()) return;
             if (webViewObj == null) return;
@@ -988,6 +988,10 @@ public class XposedInit implements IXposedHookLoadPackage {
                                     // 如果 JS 返回值中显示成功选中，立即标记
                                     if (valStr.contains("SUCCESS") || valStr.contains("SEL=1")) {
                                         sAlreadyAutoSelected.set(true);
+                                        // 答案选中成功后，触发自动下一题（模块化调用）
+                                        if (autoNext) {
+                                            triggerAutoNext(webViewObj);
+                                        }
                                     }
                                 } catch (Throwable ignored) {}
                                 return null;
@@ -1154,6 +1158,140 @@ public class XposedInit implements IXposedHookLoadPackage {
         sb.append("}catch(e){try{document.title='[ERR]'+TAG+':'+e.message;}catch(e2){}");
         sb.append("return '[ANSWER]EXCEPTION|'+TAG+'|err='+e.message;");
         sb.append("}})();");
+        return sb.toString();
+    }
+
+    // ============ 自动下一题：触发入口（模块化，独立调用） ============
+    // 答案选中成功后调用，延迟 800ms 后开始查找并点击下一题按钮
+    private static void triggerAutoNext(final Object webViewObj) {
+        if (webViewObj == null) return;
+        try {
+            // 延迟 800ms，确保答案点击动画完成后再点下一题
+            final String nextJs = buildAutoNextJS(800);
+
+            // evaluateJavascript 注入
+            try {
+                XposedHelpers.callMethod(webViewObj, "evaluateJavascript", nextJs, null);
+            } catch (Throwable te) {
+                // 兜底：loadUrl
+                try {
+                    XposedHelpers.callMethod(webViewObj, "loadUrl", "javascript:" + nextJs);
+                } catch (Throwable ignored2) {}
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    // ============ 自动下一题：模块化 JS 构建器 ============
+    // 独立模块，不影响自动选中答案功能
+    // 使用 window.__AR_NEXT_CLICKED 全局变量防止重复触发
+    private static String buildAutoNextJS(long delayMs) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("(function(){try{");
+        sb.append("var TAG='AUTO_NEXT';");
+        sb.append("var D=document;");
+        sb.append("var DELAY=").append(delayMs).append(";");
+
+        // 检查是否已触发过（全局变量防重复）
+        sb.append("if(window.__AR_NEXT_CLICKED){return '[NEXT]ALREADY_CLICKED';}");
+
+        // 核心点击函数：对找到的元素执行点击
+        sb.append("function doClick(el){");
+        sb.append("if(!el)return false;");
+        sb.append("window.__AR_NEXT_CLICKED=true;");
+        // 尝试多种点击方式
+        sb.append("try{if(el.click)el.click();}catch(e){}");
+        sb.append("try{var evs=['click','mousedown','mouseup','touchstart','touchend'];for(var vi=0;vi<evs.length;vi++){try{var evt;if(evs[vi].indexOf('mouse')>=0||evs[vi]==='click'){evt=new MouseEvent(evs[vi],{bubbles:true,cancelable:true,view:window,button:0});}else if(evs[vi].indexOf('touch')>=0){evt=new TouchEvent(evs[vi],{bubbles:true,cancelable:true});}else{evt=D.createEvent('HTMLEvents');evt.initEvent(evs[vi],true,true);}el.dispatchEvent(evt);}catch(e){}}}catch(e){}");
+        // 点击成功后立即重置标志，确保下一题能继续触发
+        sb.append("setTimeout(function(){window.__AR_NEXT_CLICKED=false;},500);");
+        sb.append("return true;}");
+
+        // 策略1：按文本精确匹配搜索按钮
+        sb.append("function findByText(){");
+        sb.append("var keywords=['下一题','下一个','下一页','继续','提交','下道题','下一关','Next','NEXT','next','Continue','continue'];");
+        sb.append("var candidates=D.body.querySelectorAll('button,a,div,span,li,p,label,input[type=button],input[type=submit]');");
+        sb.append("for(var i=0;i<candidates.length;i++){");
+        sb.append("var el=candidates[i];");
+        sb.append("var txt='';try{txt=(el.innerText||el.textContent||el.value||'').toString().trim();}catch(e){}");
+        sb.append("if(!txt||txt.length>20)continue;");
+        sb.append("for(var ki=0;ki<keywords.length;ki++){");
+        sb.append("if(txt===keywords[ki]){return el;}");
+        sb.append("}");
+        sb.append("}");
+        sb.append("return null;}");
+
+        // 策略2：按 class/id 属性关键词搜索
+        sb.append("function findByAttr(){");
+        sb.append("var attrs=['next-btn','nextButton','next_button','btn-next','btnNext','next-btn','submit-btn','submitButton','submit_button','btn-submit','btnSubmit','下一题','next'];");
+        sb.append("var all=D.body.querySelectorAll('*');");
+        sb.append("for(var i=0;i<all.length;i++){");
+        sb.append("var el=all[i];");
+        sb.append("var cls='',id='';");
+        sb.append("try{cls=(el.className||'').toString();}catch(e){}");
+        sb.append("try{id=(el.id||'').toString();}catch(e){}");
+        sb.append("if(!cls&&!id)continue;");
+        sb.append("for(var ai=0;ai<attrs.length;ai++){");
+        sb.append("if(cls.indexOf(attrs[ai])>=0||id.indexOf(attrs[ai])>=0){return el;}");
+        sb.append("}");
+        sb.append("}");
+        sb.append("return null;}");
+
+        // 策略3：找包含"下一题"文本的任意元素（模糊匹配）
+        sb.append("function findByFuzzyText(){");
+        sb.append("var all=D.body.querySelectorAll('button,a,div,span,li');");
+        sb.append("for(var i=0;i<all.length;i++){");
+        sb.append("var txt='';try{txt=(all[i].innerText||all[i].textContent||'').toString().trim();}catch(e){}");
+        sb.append("if(txt&&txt.length<=10&&(txt.indexOf('下一题')>=0||txt.indexOf('下一个')>=0||txt.indexOf('继续')>=0)){return all[i];}");
+        sb.append("}");
+        sb.append("return null;}");
+
+        // 策略4：从可点击元素向上找（针对 uni-app 自定义组件）
+        sb.append("function findByParent(){");
+        sb.append("var all=D.body.querySelectorAll('*');");
+        sb.append("for(var i=0;i<all.length;i++){");
+        sb.append("var txt='';try{txt=(all[i].innerText||all[i].textContent||'').toString().trim();}catch(e){}");
+        sb.append("if(txt==='下一题'||txt==='下一个'||txt==='继续'){");
+        sb.append("var cur=all[i];for(var lv=0;lv<5&&cur;lv++){");
+        sb.append("try{if(cur.click&&cur.tagName!=='BODY'&&cur.tagName!=='HTML'){return cur;}}catch(e){}");
+        sb.append("cur=cur.parentElement;");
+        sb.append("}");
+        sb.append("return all[i];");
+        sb.append("}");
+        sb.append("}");
+        sb.append("return null;}");
+
+        // 执行查找并点击
+        sb.append("function tryClick(){");
+        sb.append("if(window.__AR_NEXT_CLICKED)return;");
+        sb.append("var el=null;");
+        sb.append("if(!el)el=findByText();");
+        sb.append("if(!el)el=findByAttr();");
+        sb.append("if(!el)el=findByFuzzyText();");
+        sb.append("if(!el)el=findByParent();");
+        sb.append("if(el){if(doClick(el)){return true;}}");
+        sb.append("return false;}");
+
+        // 主逻辑：延迟执行 + 多次重试
+        sb.append("var retries=0;");
+        sb.append("function retryLoop(){");
+        sb.append("if(tryClick()){return;}");
+        sb.append("retries++;");
+        sb.append("if(retries<10){setTimeout(retryLoop,300);}");
+        sb.append("}");
+        sb.append("setTimeout(retryLoop,DELAY);");
+
+        // MutationObserver 兜底：持续观察直到找到按钮
+        sb.append("if(window.MutationObserver){");
+        sb.append("try{var obs=new MutationObserver(function(){");
+        sb.append("if(window.__AR_NEXT_CLICKED){obs.disconnect();return;}");
+        sb.append("tryClick();");
+        sb.append("if(window.__AR_NEXT_CLICKED){obs.disconnect();}");
+        sb.append("});obs.observe(D.body||D.documentElement,{childList:true,subtree:true});");
+        sb.append("setTimeout(function(){try{obs.disconnect();}catch(e){}},15000);}catch(e){}");
+        sb.append("}");
+
+        sb.append("return '[NEXT]SCHEDULED|delay='+DELAY;");
+        sb.append("}catch(e){return '[NEXT]ERROR|'+e.message;}");
+        sb.append("})();");
         return sb.toString();
     }
 
