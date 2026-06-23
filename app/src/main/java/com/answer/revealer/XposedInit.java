@@ -74,7 +74,6 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static final java.util.Set<String> initializedPackages =
             Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 
-    private static final AtomicInteger requestCounter = new AtomicInteger(0);
     private static final AtomicInteger targetHitCounter = new AtomicInteger(0);
 
     // 存储当前题目的正确答案文本（用于 JS 直接选中）
@@ -1292,7 +1291,6 @@ public class XposedInit implements IXposedHookLoadPackage {
             values.put("last_hook_time", System.currentTimeMillis());
             values.put("package_hooked", TARGET_PACKAGE);
             values.put("target_hit_count", targetHitCounter.get());
-            values.put("request_count", requestCounter.get());
 
             if (clients != null && !clients.isEmpty()) {
                 StringBuilder sb = new StringBuilder();
@@ -1323,7 +1321,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                     android.content.SharedPreferences.Editor editor = sp.edit();
                     editor.putLong("last_hook_time", System.currentTimeMillis());
                     editor.putInt("target_hit_count", targetHitCounter.get());
-                    editor.putInt("request_count", requestCounter.get());
                     if (clients != null && !clients.isEmpty()) {
                         StringBuilder sb = new StringBuilder();
                         for (String s : clients) sb.append(s).append("\n");
@@ -1344,7 +1341,6 @@ public class XposedInit implements IXposedHookLoadPackage {
                     if (ctx == null) return;
                     ContentValues values = new ContentValues();
                     values.put("target_hit_count", targetHitCounter.get());
-                    values.put("request_count", requestCounter.get());
                     values.put("last_hook_time", System.currentTimeMillis());
 
                     // 重试 2 次提高成功率
@@ -1364,39 +1360,10 @@ public class XposedInit implements IXposedHookLoadPackage {
                                 Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
                         sp.edit()
                                 .putInt("target_hit_count", targetHitCounter.get())
-                                .putInt("request_count", requestCounter.get())
                                 .putLong("last_hook_time", System.currentTimeMillis())
                                 .apply();
                     } catch (Throwable ignored) {}
                 } catch (Throwable ignored) {}
-            }
-        }).start();
-    }
-
-    private void writeRequestRecord(String type, String urlStr) {
-        requestCounter.incrementAndGet();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
-                    if (ctx == null) return;
-                    ContentValues values = new ContentValues();
-                    values.put("type", type);
-                    values.put("url", urlStr);
-                    ctx.getContentResolver().insert(PROVIDER_REQUEST_URI, values);
-                } catch (Throwable t) {
-                    // fallback: 目标应用自己的 SP
-                    try {
-                        Context ctx = appContext != null ? appContext : getAppContextFromActivityThread();
-                        if (ctx != null) {
-                            android.content.SharedPreferences sp = ctx.getSharedPreferences("answer_revealer_status",
-                                    Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
-                            String key = "req_" + String.format("%05d", requestCounter.get()) + "_" + System.currentTimeMillis();
-                            sp.edit().putString(key, type + "|" + urlStr).apply();
-                        }
-                    } catch (Throwable ignored) {}
-                }
             }
         }).start();
     }

@@ -35,7 +35,6 @@ public class MainActivity extends Activity {
 
     // ContentProvider URIs
     private static final Uri URI_QUERY = Uri.parse("content://com.answer.revealer.stats/query");
-    private static final Uri URI_REQUESTS = Uri.parse("content://com.answer.revealer.stats/requests");
     private static final Uri URI_CLEAR = Uri.parse("content://com.answer.revealer.stats/clear");
     private static final Uri URI_UPDATE = Uri.parse("content://com.answer.revealer.stats/update");
 
@@ -60,7 +59,6 @@ public class MainActivity extends Activity {
 
     private Handler mHandler;
     private StatsData mData;
-    private boolean mExpandedRequests = false;
 
     // ============ 启动优化：主题背景 + 骨架屏 ============
     @Override
@@ -157,10 +155,7 @@ public class MainActivity extends Activity {
         // 5. HTTP 客户端
         addHttpClientsCard(root);
 
-        // 6. 最近请求（可展开+点击详情）
-        addRecentRequestsCard(root);
-
-        // 7. 工作原理
+        // 6. 工作原理
         addInfoCard(root);
 
         sv.addView(root);
@@ -501,7 +496,6 @@ public class MainActivity extends Activity {
     // ============ 统计数据卡片 ============
     private void addStatsCard(LinearLayout root) {
         int hh = mData != null ? mData.targetHitCount : -1;
-        int rc = mData != null ? mData.requestCount : -1;
         long lt = mData != null ? mData.lastHookTime : -1;
 
         LinearLayout card = new LinearLayout(this);
@@ -515,8 +509,6 @@ public class MainActivity extends Activity {
         card.setPadding(dp(12), dp(12), dp(12), dp(12));
 
         addStatCol(card, "命中次数", hh < 0 ? "—" : String.valueOf(hh), DS_ACCENT);
-        addStatDivider(card);
-        addStatCol(card, "请求总数", rc < 0 ? "—" : String.valueOf(rc), DS_PRIMARY);
         addStatDivider(card);
         addStatCol(card, "最近活跃", lt <= 0 ? "—" : formatTimeShort(lt), DS_YELLOW);
 
@@ -636,151 +628,6 @@ public class MainActivity extends Activity {
         }
 
         root.addView(card, cardParams());
-    }
-
-    // ============ 最近请求卡片（可展开+点击详情） ============
-    private void addRecentRequestsCard(LinearLayout root) {
-        final List<RequestItem> requests = mData != null ? mData.requests : null;
-        final int showCount = mExpandedRequests ? (requests != null ? requests.size() : 0) : 2;
-
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable gd = new GradientDrawable();
-        gd.setColor(DS_CARD);
-        gd.setCornerRadius(dp(16));
-        gd.setStroke(dp(1), DS_BORDER);
-        card.setBackground(gd);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-
-        // 标题
-        TextView title = new TextView(this);
-        title.setText("最近请求" + (requests != null && !requests.isEmpty() ? "  " + requests.size() + " 条" : ""));
-        title.setTextSize(12);
-        title.setTextColor(DS_TEXT);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        card.addView(title);
-
-        if (requests != null && !requests.isEmpty()) {
-            // 请求列表
-            for (int i = 0; i < Math.min(showCount, requests.size()); i++) {
-                RequestItem item = requests.get(i);
-                View row = buildRequestRow(i + 1, item);
-                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                rlp.topMargin = dp(6);
-                row.setLayoutParams(rlp);
-                card.addView(row);
-            }
-
-            // 展开/收起按钮
-            if (requests.size() > 2) {
-                TextView expandBtn = new TextView(this);
-                expandBtn.setText(mExpandedRequests ? "收起 ▲" : "展开全部 " + requests.size() + " 条 ▼");
-                expandBtn.setTextSize(11);
-                expandBtn.setTextColor(DS_PRIMARY);
-                expandBtn.setGravity(Gravity.CENTER);
-                LinearLayout.LayoutParams eblp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                eblp.topMargin = dp(8);
-                expandBtn.setLayoutParams(eblp);
-                expandBtn.setOnClickListener(v -> {
-                    mExpandedRequests = !mExpandedRequests;
-                    renderFullUI();
-                });
-                card.addView(expandBtn);
-            }
-        } else {
-            TextView empty = new TextView(this);
-            empty.setText("尚未捕获请求");
-            empty.setTextSize(11);
-            empty.setTextColor(DS_TEXT_MUTED);
-            LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            ep.topMargin = dp(8);
-            empty.setLayoutParams(ep);
-            card.addView(empty);
-        }
-
-        root.addView(card, cardParams());
-    }
-
-    private View buildRequestRow(int idx, RequestItem item) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(DS_CARD_SOFT);
-        bg.setCornerRadius(dp(8));
-        row.setBackground(bg);
-        row.setPadding(dp(8), dp(6), dp(8), dp(6));
-
-        // 点击查看详情
-        row.setOnClickListener(v -> showRequestDetail(item));
-
-        // 索引
-        TextView num = new TextView(this);
-        num.setText(String.valueOf(idx));
-        num.setTextSize(10);
-        num.setTextColor(0xFFFFFFFF);
-        num.setGravity(Gravity.CENTER);
-        num.setTypeface(null, android.graphics.Typeface.BOLD);
-        GradientDrawable numBg = new GradientDrawable();
-        numBg.setShape(GradientDrawable.OVAL);
-        numBg.setColor(DS_PRIMARY);
-        num.setBackground(numBg);
-        num.setLayoutParams(new LinearLayout.LayoutParams(dp(20), dp(20)));
-        row.addView(num);
-
-        // URL（截断）
-        String shortUrl = item.url;
-        if (shortUrl != null && shortUrl.length() > 35) {
-            shortUrl = shortUrl.substring(0, 32) + "...";
-        }
-        TextView urlTv = new TextView(this);
-        urlTv.setText(shortUrl != null ? shortUrl : "");
-        urlTv.setTextSize(11);
-        urlTv.setTextColor(DS_TEXT);
-        urlTv.setSingleLine();
-        urlTv.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams ulp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        ulp.leftMargin = dp(6);
-        urlTv.setLayoutParams(ulp);
-        row.addView(urlTv);
-
-        // 类型标签
-        TextView typeTv = new TextView(this);
-        typeTv.setText(item.type != null ? item.type : "");
-        typeTv.setTextSize(9);
-        typeTv.setTextColor(DS_TEXT_MUTED);
-        row.addView(typeTv);
-
-        return row;
-    }
-
-    // 点击查看详情弹窗
-    private void showRequestDetail(RequestItem item) {
-        String timeStr = "";
-        if (item.time > 0) {
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-            timeStr = sdf.format(new Date(item.time));
-        }
-
-        String urlDisplay = item.url;
-        if (urlDisplay == null) urlDisplay = "";
-
-        new AlertDialog.Builder(this)
-                .setTitle("请求详情")
-                .setMessage(
-                        "类型: " + (item.type != null ? item.type : "未知") + "\n\n" +
-                        "时间: " + timeStr + "\n\n" +
-                        "URL:\n" + urlDisplay
-                )
-                .setPositiveButton("复制URL", (d, w) -> {
-                    // 复制到剪贴板
-                    android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                    android.content.ClipData cd = android.content.ClipData.newPlainText("url", item.url);
-                    cm.setPrimaryClip(cd);
-                    Toast.makeText(this, "URL已复制", Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton("关闭", null)
-                .show();
     }
 
     // ============ 工作原理卡片 ============
@@ -953,21 +800,13 @@ public class MainActivity extends Activity {
     // ============ 数据模型 ============
     private static class StatsData {
         boolean moduleActive = false;
-        int requestCount = -1;
         int targetHitCount = -1;
         long lastHookTime = -1;
         String detectedClients = "";
-        List<RequestItem> requests = new ArrayList<>();
         boolean autoSelectEnabled = false;
         boolean autoSelectLoaded = false;
         boolean autoNextEnabled = false;
         boolean autoNextLoaded = false;
-    }
-
-    private static class RequestItem {
-        String type;
-        String url;
-        long time;
     }
 
     private StatsData loadStatsData() {
@@ -983,8 +822,7 @@ public class MainActivity extends Activity {
                     long value = cursor.getLong(cursor.getColumnIndex("value"));
                     String valueStr = null;
                     try { valueStr = cursor.getString(cursor.getColumnIndex("value_str")); } catch (Throwable ignored) {}
-                    if ("request_count".equals(key)) data.requestCount = (int) value;
-                    else if ("target_hit_count".equals(key)) data.targetHitCount = (int) value;
+                    if ("target_hit_count".equals(key)) data.targetHitCount = (int) value;
                     else if ("last_hook_time".equals(key)) data.lastHookTime = value;
                     else if ("detected_clients".equals(key)) data.detectedClients = valueStr != null ? valueStr : "";
                     else if ("auto_select_enabled".equals(key)) {
@@ -1001,25 +839,6 @@ public class MainActivity extends Activity {
             if (cursor != null) try { cursor.close(); } catch (Throwable ignored) {}
         }
 
-        // 请求记录
-        try {
-            Cursor rc = getContentResolver().query(URI_REQUESTS, null, null, null, null);
-            if (rc != null && rc.moveToFirst()) {
-                do {
-                    try {
-                        RequestItem item = new RequestItem();
-                        item.type = rc.getString(rc.getColumnIndex("type"));
-                        item.url = rc.getString(rc.getColumnIndex("url"));
-                        item.time = rc.getLong(rc.getColumnIndex("time"));
-                        data.requests.add(item);
-                    } catch (Throwable ignored) {}
-                } while (rc.moveToNext());
-                rc.close();
-            }
-        } catch (Throwable ignored) {}
-
-        Collections.sort(data.requests, (a, b) -> Long.compare(b.time, a.time));
-
         // SharedPreferences
         try {
             SharedPreferences selfSp = getSharedPreferences("module_stats", MODE_PRIVATE);
@@ -1027,7 +846,6 @@ public class MainActivity extends Activity {
             if (!data.autoSelectLoaded || data.autoSelectEnabled != spAuto) data.autoSelectEnabled = spAuto;
             boolean spNext = selfSp.getBoolean("auto_next_enabled", data.autoNextEnabled);
             if (!data.autoNextLoaded || data.autoNextEnabled != spNext) data.autoNextEnabled = spNext;
-            if (data.requestCount < 0) data.requestCount = selfSp.getInt("request_count", -1);
             if (data.targetHitCount < 0) data.targetHitCount = selfSp.getInt("target_hit_count", -1);
             if (data.lastHookTime < 0) data.lastHookTime = selfSp.getLong("last_hook_time", -1);
         } catch (Throwable ignored) {}
