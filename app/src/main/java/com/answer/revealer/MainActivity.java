@@ -128,7 +128,7 @@ public class MainActivity extends Activity {
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setBackground(DS_CARD);
+        content.setBackgroundColor(DS_CARD);
 
         // 标题栏
         LinearLayout titleBar = new LinearLayout(this);
