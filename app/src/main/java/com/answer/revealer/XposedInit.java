@@ -76,6 +76,9 @@ public class XposedInit implements IXposedHookLoadPackage {
     private static volatile long sLastNextTime = 0;
     private static final long AUTO_NEXT_COOLDOWN_MS = 3000;
 
+    // 防重：自动下一题后重新注入的调度 ID（防止多次调度，只保留最新的）
+    private static volatile long sNextReinjectId = 0;
+
     // 防重：调度防抖 - 如果最近已经排过注入任务，则不再重复排（防止 shouldInterceptRequest 多次触发堆积）
     private static volatile long sLastScheduledTime = 0;
     private static final long SCHEDULE_DEBOUNCE_MS = 1500;
@@ -1049,10 +1052,6 @@ public class XposedInit implements IXposedHookLoadPackage {
             // 如果已经成功选中过，就不再重复（防止在选项间乱跳）
             if (sAlreadyAutoSelected.get()) return;
 
-            // 冷却时间检查：上次成功后冷却期内不允许再次注入（防止多个延迟任务在不同题目上连续触发）
-            long now = System.currentTimeMillis();
-            if (sLastSuccessTime > 0 && now - sLastSuccessTime < AUTO_SELECT_COOLDOWN_MS) return;
-
             String answerText = sCorrectAnswerText;
             if (answerText == null || answerText.isEmpty()) return;
 
@@ -1314,6 +1313,21 @@ public class XposedInit implements IXposedHookLoadPackage {
                     XposedHelpers.callMethod(webViewObj, "loadUrl", "javascript:" + nextJs);
                 } catch (Throwable ignored2) {}
             }
+
+            // 点击下一题后，延迟 2.5 秒再主动注入一次自动答题 JS
+            // （形成闭环：自动答题→自动下一题→自动注入→自动答题...
+            //  即使下一题没有触发新的 API 请求，也能自动检测并选中答案）
+            final long scheduleId = sNextReinjectId + 1;
+            sNextReinjectId = scheduleId;
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (sNextReinjectId != scheduleId) return; // 已经有新的了，取消旧的
+                        injectJsIntoWebView(webViewObj, "[auto-next-reinject]");
+                    } catch (Throwable ignored) {}
+                }
+            }, 2500);
         } catch (Throwable ignored) {}
     }
 
