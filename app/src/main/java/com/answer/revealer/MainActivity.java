@@ -943,6 +943,7 @@ public class MainActivity extends Activity {
     private void addActionCard(LinearLayout root) {
         final boolean autoOn = mData != null && mData.autoSelectEnabled;
         final boolean autoNextOn = mData != null && mData.autoNextEnabled;
+        final boolean moduleActive = mData != null && mData.moduleActive;
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -969,7 +970,7 @@ public class MainActivity extends Activity {
         switchRow.setLayoutParams(swLp);
 
         // 自动答题开关
-        View switch1 = buildSwitch("自动答题", autoOn, v -> toggleAutoSelect(!autoOn));
+        View switch1 = buildSwitch("自动答题", autoOn, moduleActive, v -> toggleAutoSelect(!autoOn));
         switch1.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         switchRow.addView(switch1);
 
@@ -978,7 +979,7 @@ public class MainActivity extends Activity {
         switchRow.addView(spacer1);
 
         // 自动下一题开关
-        View switch2 = buildSwitch("自动下一题", autoNextOn, v -> toggleAutoNext(!autoNextOn));
+        View switch2 = buildSwitch("自动下一题", autoNextOn, moduleActive, v -> toggleAutoNext(!autoNextOn));
         switch2.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         switchRow.addView(switch2);
 
@@ -1018,22 +1019,43 @@ public class MainActivity extends Activity {
         root.addView(card, cardParams());
     }
 
-    private View buildSwitch(String label, boolean on, View.OnClickListener click) {
+    private View buildSwitch(String label, boolean on, boolean enabled, View.OnClickListener click) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(on ? THEME_BG : DS_CARD_SOFT);
-        bg.setCornerRadius(dp(12));
-        bg.setStroke(dp(1), on ? THEME_PRIMARY : DS_BORDER);
+        if (!enabled) {
+            bg.setColor(DS_CARD_SOFT);
+            bg.setCornerRadius(dp(12));
+            bg.setStroke(dp(1), DS_BORDER);
+        } else {
+            bg.setColor(on ? THEME_BG : DS_CARD_SOFT);
+            bg.setCornerRadius(dp(12));
+            bg.setStroke(dp(1), on ? THEME_PRIMARY : DS_BORDER);
+        }
         row.setBackground(bg);
         row.setPadding(dp(12), dp(10), dp(12), dp(10));
-        row.setOnClickListener(click);
+        row.setOnClickListener(enabled ? click : v ->
+                Toast.makeText(this, "请先在 LSPosed 中激活模块", Toast.LENGTH_SHORT).show()
+        );
+        row.setOnTouchListener((v, event) -> {
+            if (!enabled) return false;
+            switch (event.getAction()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    v.setAlpha(0.7f);
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    v.setAlpha(1.0f);
+                    break;
+            }
+            return false;
+        });
 
         TextView labelTv = new TextView(this);
         labelTv.setText(label);
         labelTv.setTextSize(12);
-        labelTv.setTextColor(DS_TEXT);
+        labelTv.setTextColor(enabled ? DS_TEXT : DS_TEXT_MUTED);
         labelTv.setTypeface(null, android.graphics.Typeface.BOLD);
         labelTv.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         row.addView(labelTv);
@@ -1042,7 +1064,7 @@ public class MainActivity extends Activity {
         View indicator = new View(this);
         GradientDrawable indGd = new GradientDrawable();
         indGd.setCornerRadius(dp(4));
-        indGd.setColor(on ? THEME_PRIMARY : DS_GRAY);
+        indGd.setColor(enabled ? (on ? THEME_PRIMARY : DS_GRAY) : DS_GRAY);
         indicator.setBackground(indGd);
         LinearLayout.LayoutParams indLp = new LinearLayout.LayoutParams(dp(24), dp(12));
         indicator.setLayoutParams(indLp);
@@ -1060,6 +1082,18 @@ public class MainActivity extends Activity {
         btn.setBackground(gd);
         btn.setPadding(dp(10), dp(10), dp(10), dp(10));
         btn.setOnClickListener(click);
+        btn.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    v.setAlpha(0.7f);
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    v.setAlpha(1.0f);
+                    break;
+            }
+            return false;
+        });
 
         TextView tv = new TextView(this);
         tv.setText(label);
@@ -1854,6 +1888,10 @@ public class MainActivity extends Activity {
     }
 
     private void toggleAutoSelect(boolean on) {
+        if (mData == null || !mData.moduleActive) {
+            Toast.makeText(this, "请先在 LSPosed 中激活模块", Toast.LENGTH_SHORT).show();
+            return;
+        }
         try {
             ContentValues cv = new ContentValues();
             cv.put("auto_select_enabled", on);
@@ -1868,6 +1906,10 @@ public class MainActivity extends Activity {
     }
 
     private void toggleAutoNext(boolean on) {
+        if (mData == null || !mData.moduleActive) {
+            Toast.makeText(this, "请先在 LSPosed 中激活模块", Toast.LENGTH_SHORT).show();
+            return;
+        }
         try {
             ContentValues cv = new ContentValues();
             cv.put("auto_next_enabled", on);
