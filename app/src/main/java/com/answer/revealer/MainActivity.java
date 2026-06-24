@@ -144,363 +144,374 @@ public class MainActivity extends Activity {
         } catch (Throwable ignored) {}
     }
 
-    // ============ 主题选择器（App Store 商城风格） ============
+    // ============ 主题选择器（Liquid Glass 高端风格） ============
     private void showThemeSelector() {
         Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
+        // 全屏容器，深色渐变背景
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setBackgroundColor(THEME_BG);
+        content.setBackgroundColor(0xFFF8FAFC);
 
-        // ========== 顶部：App Store 风格应用信息 ==========
-        LinearLayout appHeader = new LinearLayout(this);
-        appHeader.setOrientation(LinearLayout.VERTICAL);
-        appHeader.setGravity(Gravity.CENTER);
-        appHeader.setPadding(dp(20), dp(24), dp(20), dp(16));
+        // ========== Hero 区域：大号图标 + 标题 ==========
+        LinearLayout heroSection = new LinearLayout(this);
+        heroSection.setOrientation(LinearLayout.VERTICAL);
+        heroSection.setGravity(Gravity.CENTER);
 
-        // App 图标容器（圆角矩形 + 阴影效果）
-        LinearLayout iconContainer = new LinearLayout(this);
-        iconContainer.setGravity(Gravity.CENTER);
+        // Hero 背景：主题色渐变 + 半透明玻璃效果
+        GradientDrawable heroBg = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{THEME_PRIMARY, THEME_ACCENT});
+        heroBg.setCornerRadius(0);
+        heroSection.setBackground(heroBg);
+        heroSection.setPadding(dp(24), dp(32), dp(24), dp(28));
 
-        // 外层阴影容器
-        LinearLayout iconShadow = new LinearLayout(this);
-        iconShadow.setGravity(Gravity.CENTER);
-        GradientDrawable shadowGd = new GradientDrawable();
-        shadowGd.setShape(GradientDrawable.RECTANGLE);
-        shadowGd.setCornerRadius(dp(28));
-        shadowGd.setColor(0x20000000);
-        iconShadow.setBackground(shadowGd);
-        iconShadow.setPadding(dp(4), dp(4), dp(4), dp(8));
-        iconShadow.setElevation(dp(8));
+        // 大号 App 图标（玻璃态）
+        LinearLayout iconWrapper = new LinearLayout(this);
+        iconWrapper.setGravity(Gravity.CENTER);
+        iconWrapper.setOrientation(LinearLayout.VERTICAL);
 
-        // App 图标本体（三色渐变背景 + 图标）
-        LinearLayout appIcon = new LinearLayout(this);
-        appIcon.setGravity(Gravity.CENTER);
-        appIcon.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable appIconGd = new GradientDrawable(
+        // 外层光晕效果
+        LinearLayout glowLayer = new LinearLayout(this);
+        glowLayer.setGravity(Gravity.CENTER);
+        GradientDrawable glowGd = new GradientDrawable();
+        glowGd.setShape(GradientDrawable.OVAL);
+        glowGd.setColor(0x40FFFFFF);
+        glowLayer.setBackground(glowGd);
+        glowLayer.setLayoutParams(new LinearLayout.LayoutParams(dp(120), dp(120)));
+
+        // 内层图标容器（玻璃态圆角）
+        LinearLayout iconBox = new LinearLayout(this);
+        iconBox.setGravity(Gravity.CENTER);
+        iconBox.setOrientation(LinearLayout.VERTICAL);
+        iconBox.setElevation(dp(12));
+
+        // 图标背景：三色渐变 + 白色边框
+        GradientDrawable iconBg = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
                 new int[]{THEME_PRIMARY, THEME_ACCENT, THEME_PRIMARY_LIGHT});
-        appIconGd.setCornerRadius(dp(24));
-        appIcon.setBackground(appIconGd);
-        appIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(80), dp(80)));
-        appIcon.setPadding(dp(12), dp(12), dp(12), dp(12));
+        iconBg.setCornerRadius(dp(32));
+        iconBg.setStroke(dp(3), 0xFFFFFFFF);
+        iconBox.setBackground(iconBg);
+        iconBox.setLayoutParams(new LinearLayout.LayoutParams(dp(96), dp(96)));
+        iconBox.setPadding(dp(16), dp(16), dp(16), dp(8));
 
-        // 图标内部内容
-        LinearLayout iconContent = new LinearLayout(this);
-        iconContent.setGravity(Gravity.CENTER);
-        iconContent.setOrientation(LinearLayout.VERTICAL);
+        // 图标文字（大号）
+        TextView iconChar = new TextView(this);
+        iconChar.setText(THEME_ICON);
+        iconChar.setTextSize(42);
+        iconChar.setTextColor(0xFFFFFFFF);
+        iconChar.setGravity(Gravity.CENTER);
+        iconChar.setTypeface(null, android.graphics.Typeface.BOLD);
+        iconBox.addView(iconChar);
 
-        // 应用图标文字（答）
-        TextView iconText = new TextView(this);
-        iconText.setText(THEME_ICON);
-        iconText.setTextSize(32);
-        iconText.setTextColor(0xFFFFFFFF);
-        iconText.setGravity(Gravity.CENTER);
-        iconText.setTypeface(null, android.graphics.Typeface.BOLD);
-        iconContent.addView(iconText);
-
-        // 底部小标签
-        TextView iconLabel = new TextView(this);
-        iconLabel.setText("Theme");
-        iconLabel.setTextSize(8);
-        iconLabel.setTextColor(0xCCFFFFFF);
-        iconLabel.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
+        // 图标底部小标签
+        TextView iconSub = new TextView(this);
+        iconSub.setText("THEME");
+        iconSub.setTextSize(9);
+        iconSub.setTextColor(0xAAFFFFFF);
+        iconSub.setGravity(Gravity.CENTER);
+        iconSub.setTypeface(null, android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams isLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        llp.topMargin = dp(2);
-        iconLabel.setLayoutParams(llp);
-        iconContent.addView(iconLabel);
+        isLp.topMargin = dp(4);
+        iconSub.setLayoutParams(isLp);
+        iconBox.addView(iconSub);
 
-        appIcon.addView(iconContent);
-        iconShadow.addView(appIcon);
-        iconContainer.addView(iconShadow);
-        appHeader.addView(iconContainer);
+        glowLayer.addView(iconBox);
+        iconWrapper.addView(glowLayer);
+        heroSection.addView(iconWrapper);
 
-        // 应用名称
-        TextView appName = new TextView(this);
-        appName.setText("答案显示模块");
-        appName.setTextSize(20);
-        appName.setTextColor(THEME_TEXT_DARK);
-        appName.setGravity(Gravity.CENTER);
-        appName.setTypeface(null, android.graphics.Typeface.BOLD);
-        LinearLayout.LayoutParams anLp = new LinearLayout.LayoutParams(
+        // 应用标题
+        TextView heroTitle = new TextView(this);
+        heroTitle.setText("主题画廊");
+        heroTitle.setTextSize(28);
+        heroTitle.setTextColor(0xFFFFFFFF);
+        heroTitle.setGravity(Gravity.CENTER);
+        heroTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams htLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        anLp.topMargin = dp(14);
-        appName.setLayoutParams(anLp);
-        appHeader.addView(appName);
+        htLp.topMargin = dp(20);
+        heroTitle.setLayoutParams(htLp);
+        heroSection.addView(heroTitle);
 
-        // 应用副标题
-        TextView appSubtitle = new TextView(this);
-        appSubtitle.setText("LSPosed 智能答题助手");
-        appSubtitle.setTextSize(13);
-        appSubtitle.setTextColor(DS_TEXT_SECOND);
-        appSubtitle.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams asLp = new LinearLayout.LayoutParams(
+        // 副标题
+        TextView heroSubtitle = new TextView(this);
+        heroSubtitle.setText("选择你喜欢的主题风格");
+        heroSubtitle.setTextSize(14);
+        heroSubtitle.setTextColor(0xCCFFFFFF);
+        heroSubtitle.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams hsLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        asLp.topMargin = dp(4);
-        appSubtitle.setLayoutParams(asLp);
-        appHeader.addView(appSubtitle);
+        hsLp.topMargin = dp(6);
+        heroSubtitle.setLayoutParams(hsLp);
+        heroSection.addView(heroSubtitle);
 
-        // 当前主题标签
-        LinearLayout currentThemeTag = new LinearLayout(this);
-        currentThemeTag.setGravity(Gravity.CENTER);
-        currentThemeTag.setOrientation(LinearLayout.HORIZONTAL);
-        GradientDrawable tagGd = new GradientDrawable();
-        tagGd.setColor(THEME_PRIMARY);
-        tagGd.setCornerRadius(dp(100));
-        currentThemeTag.setBackground(tagGd);
-        currentThemeTag.setPadding(dp(16), dp(6), dp(16), dp(6));
-        LinearLayout.LayoutParams ctLp = new LinearLayout.LayoutParams(
+        // 当前主题胶囊
+        LinearLayout currentPill = new LinearLayout(this);
+        currentPill.setGravity(Gravity.CENTER);
+        currentPill.setOrientation(LinearLayout.HORIZONTAL);
+        currentPill.setPadding(dp(20), dp(8), dp(20), dp(8));
+        GradientDrawable pillBg = new GradientDrawable();
+        pillBg.setColor(0x30FFFFFF);
+        pillBg.setCornerRadius(dp(100));
+        pillBg.setStroke(dp(1), 0x40FFFFFF);
+        currentPill.setBackground(pillBg);
+        LinearLayout.LayoutParams cpLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        ctLp.topMargin = dp(12);
-        currentThemeTag.setLayoutParams(ctLp);
+        cpLp.topMargin = dp(16);
+        currentPill.setLayoutParams(cpLp);
 
-        TextView tagIcon = new TextView(this);
-        tagIcon.setText("●");
-        tagIcon.setTextSize(6);
-        tagIcon.setTextColor(0xFFFFFFFF);
-        currentThemeTag.addView(tagIcon);
+        TextView pillDot = new TextView(this);
+        pillDot.setText("●");
+        pillDot.setTextSize(8);
+        pillDot.setTextColor(0xFFFFFFFF);
+        currentPill.addView(pillDot);
 
-        TextView tagText = new TextView(this);
-        tagText.setText("当前: " + THEME_NAME);
-        tagText.setTextSize(12);
-        tagText.setTextColor(0xFFFFFFFF);
-        tagText.setTypeface(null, android.graphics.Typeface.BOLD);
-        LinearLayout.LayoutParams ttLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        ttLp.leftMargin = dp(6);
-        tagText.setLayoutParams(ttLp);
-        currentThemeTag.addView(tagText);
+        TextView pillText = new TextView(this);
+        pillText.setText(" 当前: " + THEME_NAME);
+        pillText.setTextSize(13);
+        pillText.setTextColor(0xFFFFFFFF);
+        pillText.setTypeface(null, android.graphics.Typeface.BOLD);
+        currentPill.addView(pillText);
 
-        appHeader.addView(currentThemeTag);
+        heroSection.addView(currentPill);
 
-        content.addView(appHeader);
+        content.addView(heroSection);
 
-        // ========== 分割线 ==========
-        View divider = new View(this);
-        GradientDrawable divGd = new GradientDrawable();
-        divGd.setColor(DS_BORDER);
-        divider.setBackground(divGd);
-        divider.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
-        content.addView(divider);
+        // ========== 主题画廊网格 ==========
+        ScrollView galleryScroll = new ScrollView(this);
+        galleryScroll.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        galleryScroll.setBackgroundColor(0xFFF8FAFC);
+        galleryScroll.setPadding(0, dp(16), 0, dp(24));
 
-        // ========== 主题列表标题 ==========
-        LinearLayout listHeader = new LinearLayout(this);
-        listHeader.setOrientation(LinearLayout.HORIZONTAL);
-        listHeader.setGravity(Gravity.CENTER_VERTICAL);
-        listHeader.setPadding(dp(20), dp(16), dp(20), dp(12));
+        LinearLayout galleryGrid = new LinearLayout(this);
+        galleryGrid.setOrientation(LinearLayout.VERTICAL);
+        galleryGrid.setPadding(dp(16), dp(8), dp(16), dp(8));
 
-        TextView listTitle = new TextView(this);
-        listTitle.setText("选择主题颜色");
-        listTitle.setTextSize(16);
-        listTitle.setTextColor(THEME_TEXT_DARK);
-        listTitle.setTypeface(null, android.graphics.Typeface.BOLD);
-        listHeader.addView(listTitle);
+        // 两列布局
+        int totalThemes = THEME_NAMES.length;
+        for (int row = 0; row < (totalThemes / 2) + (totalThemes % 2); row++) {
+            LinearLayout rowContainer = new LinearLayout(this);
+            rowContainer.setOrientation(LinearLayout.HORIZONTAL);
+            rowContainer.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams rcLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            rcLp.bottomMargin = dp(12);
+            rowContainer.setLayoutParams(rcLp);
 
-        View headerSpacer = new View(this);
-        headerSpacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
-        listHeader.addView(headerSpacer);
-
-        TextView themeCount = new TextView(this);
-        themeCount.setText(THEME_NAMES.length + " 个主题");
-        themeCount.setTextSize(12);
-        themeCount.setTextColor(DS_TEXT_MUTED);
-        listHeader.addView(themeCount);
-
-        content.addView(listHeader);
-
-        // ========== 主题网格列表（两列布局） ==========
-        ScrollView gridScroll = new ScrollView(this);
-        gridScroll.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(380)));
-
-        LinearLayout gridContainer = new LinearLayout(this);
-        gridContainer.setOrientation(LinearLayout.VERTICAL);
-        gridContainer.setPadding(dp(12), 0, dp(12), dp(16));
-
-        // 分两行，每行5个主题（或者按奇偶分左右两列）
-        int themeCount2 = THEME_NAMES.length;
-        boolean isOdd = themeCount2 % 2 != 0;
-
-        for (int i = 0; i < (isOdd ? themeCount2 - 1 : themeCount2); i += 2) {
-            final int themeIndex1 = i;
-            final int themeIndex2 = i + 1;
-            int[] colors1 = THEME_COLORS[i];
-            int[] colors2 = themeIndex2 < themeCount2 ? THEME_COLORS[i + 1] : null;
-
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-
-            // 左列主题卡片
-            LinearLayout card1 = buildThemeCard(themeIndex1, dialog);
-            LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            cardLp.rightMargin = dp(8);
-            card1.setLayoutParams(cardLp);
-            row.addView(card1);
-
-            // 右列主题卡片（或空占位）
-            if (themeIndex2 < themeCount2) {
-                LinearLayout card2 = buildThemeCard(themeIndex2, dialog);
-                card2.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-                row.addView(card2);
-            } else {
-                View emptySpace = new View(this);
-                emptySpace.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
-                row.addView(emptySpace);
+            // 左卡片
+            int leftIdx = row * 2;
+            if (leftIdx < totalThemes) {
+                LinearLayout leftCard = buildPremiumThemeCard(leftIdx, dialog);
+                LinearLayout.LayoutParams lcLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                lcLp.rightMargin = dp(8);
+                leftCard.setLayoutParams(lcLp);
+                rowContainer.addView(leftCard);
             }
 
-            // 行间距
-            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            rowLp.bottomMargin = dp(10);
-            row.setLayoutParams(rowLp);
-            gridContainer.addView(row);
+            // 右卡片
+            int rightIdx = row * 2 + 1;
+            if (rightIdx < totalThemes) {
+                LinearLayout rightCard = buildPremiumThemeCard(rightIdx, dialog);
+                rightCard.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                rowContainer.addView(rightCard);
+            } else if (leftIdx < totalThemes) {
+                // 填充空白
+                View spacer = new View(this);
+                spacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
+                rowContainer.addView(spacer);
+            }
+
+            galleryGrid.addView(rowContainer);
         }
 
-        // 如果是奇数，添加最后一个主题居中
-        if (isOdd) {
-            LinearLayout lastRow = new LinearLayout(this);
-            lastRow.setOrientation(LinearLayout.HORIZONTAL);
-            lastRow.setGravity(Gravity.CENTER);
-            LinearLayout lastCard = buildThemeCard(themeCount2 - 1, dialog);
-            lastCard.setLayoutParams(new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            lastRow.addView(lastCard);
-            LinearLayout.LayoutParams lrLp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lrLp.topMargin = dp(4);
-            lastRow.setLayoutParams(lrLp);
-            gridContainer.addView(lastRow);
-        }
-
-        gridScroll.addView(gridContainer);
-        content.addView(gridScroll);
+        galleryScroll.addView(galleryGrid);
+        content.addView(galleryScroll);
 
         dialog.setContentView(content);
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
             dialog.getWindow().setLayout(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT);
+                    ViewGroup.LayoutParams.MATCH_PARENT);
         }
         dialog.show();
     }
 
-    // ============ 构建主题卡片（App Store 风格） ============
-    private LinearLayout buildThemeCard(final int themeIndex, final Dialog parentDialog) {
+    // ============ 构建高端主题卡片（Liquid Glass 风格） ============
+    private LinearLayout buildPremiumThemeCard(final int themeIndex, final Dialog parentDialog) {
         int[] colors = THEME_COLORS[themeIndex];
         boolean isSelected = themeIndex == currentTheme;
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
+        card.setElevation(dp(6));
 
-        // 卡片背景
+        // 卡片背景：玻璃态效果
         GradientDrawable cardBg = new GradientDrawable();
-        cardBg.setOrientation(GradientDrawable.Orientation.TL_BR);
-        cardBg.setColors(new int[]{colors[3], colors[3]});
-        cardBg.setCornerRadius(dp(16));
+        cardBg.setColor(0xFFFFFFFF);
+        cardBg.setCornerRadius(dp(20));
         if (isSelected) {
-            cardBg.setStroke(dp(3), colors[0]);
+            // 选中状态：主题色渐变边框
+            cardBg.setStroke(dp(4), colors[0]);
         } else {
-            cardBg.setStroke(dp(1), DS_BORDER);
+            cardBg.setStroke(dp(1), 0xFFE5E7EB);
         }
         card.setBackground(cardBg);
-        card.setPadding(dp(16), dp(16), dp(16), dp(14));
+        card.setPadding(dp(16), dp(18), dp(16), dp(18));
 
-        // App 图标（主题色渐变）
-        LinearLayout appIcon = new LinearLayout(this);
-        appIcon.setGravity(Gravity.CENTER);
-        GradientDrawable iconGd = new GradientDrawable(
+        // ========== 主题预览区域（大号） ==========
+        LinearLayout previewArea = new LinearLayout(this);
+        previewArea.setOrientation(LinearLayout.VERTICAL);
+        previewArea.setGravity(Gravity.CENTER);
+
+        // 主题图标（大号玻璃态）
+        LinearLayout themeIconBox = new LinearLayout(this);
+        themeIconBox.setGravity(Gravity.CENTER);
+        themeIconBox.setElevation(dp(4));
+
+        // 图标背景：三色渐变
+        GradientDrawable iconBg = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
                 new int[]{colors[0], colors[4], colors[1]});
-        iconGd.setCornerRadius(dp(16));
-        appIcon.setBackground(iconGd);
-        appIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(56), dp(56)));
-        appIcon.setPadding(dp(10), dp(10), dp(10), dp(10));
+        iconBg.setCornerRadius(dp(18));
+        if (isSelected) {
+            iconBg.setStroke(dp(2), 0xFFFFFFFF);
+        }
+        themeIconBox.setBackground(iconBg);
+        themeIconBox.setLayoutParams(new LinearLayout.LayoutParams(dp(72), dp(72)));
+        themeIconBox.setPadding(dp(14), dp(14), dp(14), dp(14));
 
         TextView iconText = new TextView(this);
         iconText.setText(THEME_ICONS[themeIndex]);
-        iconText.setTextSize(24);
+        iconText.setTextSize(30);
         iconText.setTextColor(0xFFFFFFFF);
         iconText.setGravity(Gravity.CENTER);
         iconText.setTypeface(null, android.graphics.Typeface.BOLD);
-        appIcon.addView(iconText);
-        card.addView(appIcon);
+        themeIconBox.addView(iconText);
+        previewArea.addView(themeIconBox);
 
-        // 主题名称
-        TextView nameTv = new TextView(this);
-        nameTv.setText(THEME_NAMES[themeIndex]);
-        nameTv.setTextSize(14);
-        nameTv.setTextColor(THEME_TEXT_DARK);
-        nameTv.setGravity(Gravity.CENTER);
-        nameTv.setTypeface(null, android.graphics.Typeface.BOLD);
+        // 主题名称（大号）
+        TextView nameText = new TextView(this);
+        nameText.setText(THEME_NAMES[themeIndex]);
+        nameText.setTextSize(16);
+        nameText.setTextColor(0xFF1F2937);
+        nameText.setGravity(Gravity.CENTER);
+        nameText.setTypeface(null, android.graphics.Typeface.BOLD);
         LinearLayout.LayoutParams ntLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        ntLp.topMargin = dp(10);
-        nameTv.setLayoutParams(ntLp);
-        card.addView(nameTv);
+        ntLp.topMargin = dp(12);
+        nameText.setLayoutParams(ntLp);
+        previewArea.addView(nameText);
 
         // 风格描述
-        TextView descTv = new TextView(this);
-        descTv.setText(THEME_DESC[themeIndex]);
-        descTv.setTextSize(11);
-        descTv.setTextColor(DS_TEXT_SECOND);
-        descTv.setGravity(Gravity.CENTER);
+        TextView descText = new TextView(this);
+        descText.setText(THEME_DESC[themeIndex]);
+        descText.setTextSize(12);
+        descText.setTextColor(0xFF6B7280);
+        descText.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams dtLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        dtLp.topMargin = dp(2);
-        descTv.setLayoutParams(dtLp);
-        card.addView(descTv);
+        dtLp.topMargin = dp(4);
+        descText.setLayoutParams(dtLp);
+        previewArea.addView(descText);
 
-        // 颜色预览条（三色渐变）
-        View colorBar = new View(this);
-        GradientDrawable colorBarGd = new GradientDrawable(
+        // ========== 颜色预览条（渐变） ==========
+        View colorGradientBar = new View(this);
+        GradientDrawable barBg = new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{colors[0], colors[4], colors[1]});
-        colorBarGd.setCornerRadius(dp(4));
-        colorBar.setBackground(colorBarGd);
-        colorBar.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(6)));
-        LinearLayout.LayoutParams cbLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(6));
-        cbLp.topMargin = dp(10);
-        colorBar.setLayoutParams(cbLp);
-        card.addView(colorBar);
+        barBg.setCornerRadius(dp(6));
+        colorGradientBar.setBackground(barBg);
+        LinearLayout.LayoutParams gbLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(8));
+        gbLp.topMargin = dp(12);
+        colorGradientBar.setLayoutParams(gbLp);
+        previewArea.addView(colorGradientBar);
 
-        // 选中指示器
+        // ========== 颜色圆点组 ==========
+        LinearLayout dotsRow = new LinearLayout(this);
+        dotsRow.setOrientation(LinearLayout.HORIZONTAL);
+        dotsRow.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams drLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        drLp.topMargin = dp(10);
+        dotsRow.setLayoutParams(drLp);
+
+        // 主色圆
+        View dot1 = new View(this);
+        GradientDrawable d1Gd = new GradientDrawable();
+        d1Gd.setShape(GradientDrawable.OVAL);
+        d1Gd.setColor(colors[0]);
+        d1Gd.setStroke(dp(1), 0xFFFFFFFF);
+        dot1.setBackground(d1Gd);
+        dot1.setLayoutParams(new LinearLayout.LayoutParams(dp(18), dp(18)));
+        dotsRow.addView(dot1);
+
+        // 强调色圆
+        View dot2 = new View(this);
+        GradientDrawable d2Gd = new GradientDrawable();
+        d2Gd.setShape(GradientDrawable.OVAL);
+        d2Gd.setColor(colors[4]);
+        d2Gd.setStroke(dp(1), 0xFFFFFFFF);
+        dot2.setBackground(d2Gd);
+        LinearLayout.LayoutParams d2Lp = new LinearLayout.LayoutParams(dp(18), dp(18));
+        d2Lp.leftMargin = dp(8);
+        dot2.setLayoutParams(d2Lp);
+        dotsRow.addView(dot2);
+
+        // 浅色圆
+        View dot3 = new View(this);
+        GradientDrawable d3Gd = new GradientDrawable();
+        d3Gd.setShape(GradientDrawable.OVAL);
+        d3Gd.setColor(colors[1]);
+        d3Gd.setStroke(dp(1), 0xFFFFFFFF);
+        dot3.setBackground(d3Gd);
+        LinearLayout.LayoutParams d3Lp = new LinearLayout.LayoutParams(dp(18), dp(18));
+        d3Lp.leftMargin = dp(8);
+        dot3.setLayoutParams(d3Lp);
+        dotsRow.addView(dot3);
+
+        previewArea.addView(dotsRow);
+
+        // ========== 选中状态徽章 ==========
         if (isSelected) {
-            LinearLayout selectedBadge = new LinearLayout(this);
-            selectedBadge.setGravity(Gravity.CENTER);
-            selectedBadge.setOrientation(LinearLayout.HORIZONTAL);
-            selectedBadge.setPadding(dp(12), dp(4), dp(12), dp(4));
-            GradientDrawable sbGd = new GradientDrawable();
-            sbGd.setColor(colors[0]);
-            sbGd.setCornerRadius(dp(100));
-            selectedBadge.setBackground(sbGd);
-            LinearLayout.LayoutParams sbLp = new LinearLayout.LayoutParams(
+            LinearLayout activeBadge = new LinearLayout(this);
+            activeBadge.setGravity(Gravity.CENTER);
+            activeBadge.setOrientation(LinearLayout.HORIZONTAL);
+            activeBadge.setPadding(dp(16), dp(6), dp(16), dp(6));
+            GradientDrawable badgeBg = new GradientDrawable(
+                    GradientDrawable.Orientation.LEFT_RIGHT,
+                    new int[]{colors[0], colors[4]});
+            badgeBg.setCornerRadius(dp(100));
+            activeBadge.setBackground(badgeBg);
+            LinearLayout.LayoutParams abLp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            sbLp.topMargin = dp(8);
-            selectedBadge.setLayoutParams(sbLp);
+            abLp.topMargin = dp(12);
+            activeBadge.setLayoutParams(abLp);
 
-            TextView checkIcon = new TextView(this);
-            checkIcon.setText("✓ ");
-            checkIcon.setTextSize(10);
-            checkIcon.setTextColor(0xFFFFFFFF);
-            selectedBadge.addView(checkIcon);
+            TextView badgeIcon = new TextView(this);
+            badgeIcon.setText("✓");
+            badgeIcon.setTextSize(12);
+            badgeIcon.setTextColor(0xFFFFFFFF);
+            badgeIcon.setTypeface(null, android.graphics.Typeface.BOLD);
+            activeBadge.addView(badgeIcon);
 
-            TextView checkText = new TextView(this);
-            checkText.setText("使用中");
-            checkText.setTextSize(10);
-            checkText.setTextColor(0xFFFFFFFF);
-            checkText.setTypeface(null, android.graphics.Typeface.BOLD);
-            selectedBadge.addView(checkText);
+            TextView badgeText = new TextView(this);
+            badgeText.setText(" 使用中");
+            badgeText.setTextSize(12);
+            badgeText.setTextColor(0xFFFFFFFF);
+            badgeText.setTypeface(null, android.graphics.Typeface.BOLD);
+            activeBadge.addView(badgeText);
 
-            card.addView(selectedBadge);
+            previewArea.addView(activeBadge);
         }
+
+        card.addView(previewArea);
 
         // 点击事件
         card.setOnClickListener(v -> {
