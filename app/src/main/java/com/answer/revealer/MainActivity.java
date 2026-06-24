@@ -144,31 +144,91 @@ public class MainActivity extends Activity {
         } catch (Throwable ignored) {}
     }
 
-    // ============ 主题设置（经典对话框风格，与主页一致） ============
+    // ============ 主题设置（左侧抽屉式菜单风格） ============
     private void showThemeSelector() {
-        final Dialog dialog = new Dialog(this);
+        final Dialog dialog = new Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setBackgroundColor(DS_CARD);
-        content.setPadding(0, 0, 0, 0);
+        // 根容器：横向布局（抽屉 + 遮罩）
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.HORIZONTAL);
+        root.setBackgroundColor(0x00000000);
 
-        // ========== 顶部 Hero 标题区（与主页 Hero 卡片风格一致） ==========
-        LinearLayout heroHeader = new LinearLayout(this);
-        heroHeader.setOrientation(LinearLayout.VERTICAL);
+        // ========== 左侧抽屉面板 ==========
+        final LinearLayout drawer = new LinearLayout(this);
+        drawer.setOrientation(LinearLayout.VERTICAL);
+        drawer.setBackgroundColor(DS_CARD);
 
-        GradientDrawable heroBg = new GradientDrawable(
+        // 右侧圆角
+        GradientDrawable drawerBg = new GradientDrawable();
+        drawerBg.setColor(DS_CARD);
+        drawerBg.setCornerRadii(new float[]{0, 0, dp(20), dp(20), dp(20), dp(20), 0, 0});
+        drawer.setBackground(drawerBg);
+
+        // 抽屉宽度约为屏幕的 82%
+        int drawerWidth = (int) (getResources().getDisplayMetrics().widthPixels * 0.82f);
+        LinearLayout.LayoutParams drawerLp = new LinearLayout.LayoutParams(
+                drawerWidth, ViewGroup.LayoutParams.MATCH_PARENT);
+        drawer.setLayoutParams(drawerLp);
+
+        // ---------- 顶部用户区 ----------
+        LinearLayout userHeader = new LinearLayout(this);
+        userHeader.setOrientation(LinearLayout.VERTICAL);
+
+        GradientDrawable headerBg = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                new int[]{THEME_PRIMARY, THEME_ACCENT, THEME_PRIMARY_LIGHT});
-        heroBg.setCornerRadii(new float[]{dp(20), dp(20), dp(20), dp(20), 0, 0, 0, 0});
-        heroHeader.setBackground(heroBg);
-        heroHeader.setPadding(dp(20), dp(16), dp(20), dp(18));
+                new int[]{THEME_PRIMARY, THEME_ACCENT});
+        headerBg.setCornerRadii(new float[]{0, 0, dp(20), dp(20), 0, 0, 0, 0});
+        userHeader.setBackground(headerBg);
+        userHeader.setPadding(dp(20), dp(20), dp(20), dp(22));
 
-        // 第一行：关闭按钮 + 标题 + 主题图标
-        LinearLayout headerRow = new LinearLayout(this);
-        headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        // 第一行：应用图标 + 关闭按钮
+        LinearLayout firstRow = new LinearLayout(this);
+        firstRow.setOrientation(LinearLayout.HORIZONTAL);
+        firstRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        // 应用图标（白色圆角方块 + 主题字符）
+        LinearLayout appIcon = new LinearLayout(this);
+        appIcon.setGravity(Gravity.CENTER);
+        GradientDrawable aiGd = new GradientDrawable();
+        aiGd.setColor(0xFFFFFFFF);
+        aiGd.setCornerRadius(dp(12));
+        appIcon.setBackground(aiGd);
+        appIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        TextView aiText = new TextView(this);
+        aiText.setText(THEME_ICON);
+        aiText.setTextSize(22);
+        aiText.setTextColor(THEME_PRIMARY);
+        aiText.setGravity(Gravity.CENTER);
+        aiText.setTypeface(null, android.graphics.Typeface.BOLD);
+        appIcon.addView(aiText);
+        firstRow.addView(appIcon);
+
+        // 应用名称列
+        LinearLayout appNameCol = new LinearLayout(this);
+        appNameCol.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams ancLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        ancLp.leftMargin = dp(12);
+        appNameCol.setLayoutParams(ancLp);
+
+        TextView appName = new TextView(this);
+        appName.setText("主题设置");
+        appName.setTextSize(18);
+        appName.setTextColor(0xFFFFFFFF);
+        appName.setTypeface(null, android.graphics.Typeface.BOLD);
+        appNameCol.addView(appName);
+
+        TextView appSub = new TextView(this);
+        appSub.setText("个性化你的应用外观");
+        appSub.setTextSize(12);
+        appSub.setTextColor(0xCCFFFFFF);
+        LinearLayout.LayoutParams asLp2 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        asLp2.topMargin = dp(2);
+        appSub.setLayoutParams(asLp2);
+        appNameCol.addView(appSub);
+
+        firstRow.addView(appNameCol);
 
         // 关闭按钮
         LinearLayout closeBtn = new LinearLayout(this);
@@ -187,227 +247,183 @@ public class MainActivity extends Activity {
         closeTv.setGravity(Gravity.CENTER);
         closeTv.setTypeface(null, android.graphics.Typeface.BOLD);
         closeBtn.addView(closeTv);
-        headerRow.addView(closeBtn);
+        firstRow.addView(closeBtn);
 
-        // 标题文字
-        LinearLayout titleCol = new LinearLayout(this);
-        titleCol.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams tclp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        tclp.leftMargin = dp(14);
-        titleCol.setLayoutParams(tclp);
+        userHeader.addView(firstRow);
 
-        TextView titleMain = new TextView(this);
-        titleMain.setText("主题设置");
-        titleMain.setTextSize(18);
-        titleMain.setTextColor(0xFFFFFFFF);
-        titleMain.setTypeface(null, android.graphics.Typeface.BOLD);
-        titleCol.addView(titleMain);
+        // 当前主题信息条
+        LinearLayout currentBar = new LinearLayout(this);
+        currentBar.setOrientation(LinearLayout.HORIZONTAL);
+        currentBar.setGravity(Gravity.CENTER_VERTICAL);
+        currentBar.setPadding(dp(14), dp(10), dp(14), dp(10));
+        GradientDrawable cbGd = new GradientDrawable();
+        cbGd.setColor(0x20FFFFFF);
+        cbGd.setCornerRadius(dp(12));
+        currentBar.setBackground(cbGd);
+        LinearLayout.LayoutParams cbLp2 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cbLp2.topMargin = dp(16);
+        currentBar.setLayoutParams(cbLp2);
 
-        TextView titleSub = new TextView(this);
-        titleSub.setText("选择你喜欢的主题风格");
-        titleSub.setTextSize(12);
-        titleSub.setTextColor(0xCCFFFFFF);
-        LinearLayout.LayoutParams tsLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        tsLp.topMargin = dp(2);
-        titleSub.setLayoutParams(tsLp);
-        titleCol.addView(titleSub);
-
-        headerRow.addView(titleCol);
-
-        // 右侧主题图标
-        LinearLayout iconBox = new LinearLayout(this);
-        iconBox.setGravity(Gravity.CENTER);
-        GradientDrawable ibGd = new GradientDrawable();
-        ibGd.setColor(0xFFFFFFFF);
-        ibGd.setCornerRadius(dp(12));
-        iconBox.setBackground(ibGd);
-        iconBox.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
-
-        TextView iconTv = new TextView(this);
-        iconTv.setText(THEME_ICON);
-        iconTv.setTextSize(20);
-        iconTv.setTextColor(THEME_PRIMARY);
-        iconTv.setGravity(Gravity.CENTER);
-        iconTv.setTypeface(null, android.graphics.Typeface.BOLD);
-        iconBox.addView(iconTv);
-        headerRow.addView(iconBox);
-
-        heroHeader.addView(headerRow);
-
-        // 当前主题标签行
-        LinearLayout currentRow = new LinearLayout(this);
-        currentRow.setOrientation(LinearLayout.HORIZONTAL);
-        currentRow.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams crLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        crLp.topMargin = dp(14);
-        currentRow.setLayoutParams(crLp);
-
-        // 当前主题胶囊
-        LinearLayout currentTag = new LinearLayout(this);
-        currentTag.setOrientation(LinearLayout.HORIZONTAL);
-        currentTag.setGravity(Gravity.CENTER);
-        currentTag.setPadding(dp(12), dp(5), dp(12), dp(5));
-        GradientDrawable ctGd = new GradientDrawable();
-        ctGd.setColor(0x30FFFFFF);
-        ctGd.setCornerRadius(dp(100));
-        currentTag.setBackground(ctGd);
-
+        // 当前主题色点
         View currentDot = new View(this);
-        GradientDrawable cdGd = new GradientDrawable();
-        cdGd.setShape(GradientDrawable.OVAL);
-        cdGd.setColor(0xFFFFFFFF);
-        currentDot.setBackground(cdGd);
-        currentDot.setLayoutParams(new LinearLayout.LayoutParams(dp(6), dp(6)));
-        currentTag.addView(currentDot);
+        GradientDrawable cdGd2 = new GradientDrawable();
+        cdGd2.setShape(GradientDrawable.OVAL);
+        cdGd2.setColor(0xFFFFFFFF);
+        currentDot.setBackground(cdGd2);
+        currentDot.setLayoutParams(new LinearLayout.LayoutParams(dp(8), dp(8)));
+        currentBar.addView(currentDot);
 
-        TextView currentText = new TextView(this);
-        currentText.setText(" 当前: " + THEME_NAME);
-        currentText.setTextSize(12);
-        currentText.setTextColor(0xFFFFFFFF);
-        currentText.setTypeface(null, android.graphics.Typeface.BOLD);
-        currentTag.addView(currentText);
+        TextView currentLabel = new TextView(this);
+        currentLabel.setText(" 当前: ");
+        currentLabel.setTextSize(12);
+        currentLabel.setTextColor(0xCCFFFFFF);
+        currentBar.addView(currentLabel);
 
-        currentRow.addView(currentTag);
-        heroHeader.addView(currentRow);
+        TextView currentValue = new TextView(this);
+        currentValue.setText(THEME_NAME);
+        currentValue.setTextSize(12);
+        currentValue.setTextColor(0xFFFFFFFF);
+        currentValue.setTypeface(null, android.graphics.Typeface.BOLD);
+        currentBar.addView(currentValue);
 
-        content.addView(heroHeader);
+        View cbSpacer = new View(this);
+        cbSpacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
+        currentBar.addView(cbSpacer);
 
-        // ========== 主题列表区（与主页卡片风格一致） ==========
-        ScrollView listScroll = new ScrollView(this);
-        listScroll.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        listScroll.setPadding(0, dp(12), 0, dp(8));
-        LinearLayout.LayoutParams lslp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0);
-        lslp.weight = 1;
-        listScroll.setLayoutParams(lslp);
+        TextView themeCount = new TextView(this);
+        themeCount.setText(THEME_NAMES.length + " 款");
+        themeCount.setTextSize(11);
+        themeCount.setTextColor(0x99FFFFFF);
+        currentBar.addView(themeCount);
 
-        LinearLayout themeList = new LinearLayout(this);
-        themeList.setOrientation(LinearLayout.VERTICAL);
-        themeList.setPadding(dp(16), dp(4), dp(16), dp(4));
+        userHeader.addView(currentBar);
 
-        // 主题列表标题
-        LinearLayout sectionTitle = new LinearLayout(this);
-        sectionTitle.setOrientation(LinearLayout.HORIZONTAL);
-        sectionTitle.setGravity(Gravity.CENTER_VERTICAL);
-        sectionTitle.setPadding(dp(4), dp(4), dp(4), dp(10));
+        drawer.addView(userHeader);
 
-        TextView sectionTv = new TextView(this);
-        sectionTv.setText("全部主题");
-        sectionTv.setTextSize(13);
-        sectionTv.setTextColor(DS_TEXT);
-        sectionTv.setTypeface(null, android.graphics.Typeface.BOLD);
-        sectionTitle.addView(sectionTv);
+        // ---------- 主题菜单列表 ----------
+        ScrollView menuScroll = new ScrollView(this);
+        menuScroll.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        menuScroll.setPadding(0, dp(8), 0, dp(8));
 
-        View s1 = new View(this);
-        s1.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
-        sectionTitle.addView(s1);
+        LinearLayout menuList = new LinearLayout(this);
+        menuList.setOrientation(LinearLayout.VERTICAL);
+        menuList.setPadding(dp(16), dp(8), dp(16), dp(8));
 
-        TextView countTv = new TextView(this);
-        countTv.setText(THEME_NAMES.length + " 个");
-        countTv.setTextSize(12);
-        countTv.setTextColor(DS_TEXT_MUTED);
-        sectionTitle.addView(countTv);
+        // 分组标题
+        TextView sectionLabel = new TextView(this);
+        sectionLabel.setText("选择主题");
+        sectionLabel.setTextSize(12);
+        sectionLabel.setTextColor(DS_TEXT_MUTED);
+        sectionLabel.setTypeface(null, android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams slLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        slLp.leftMargin = dp(4);
+        slLp.bottomMargin = dp(8);
+        sectionLabel.setLayoutParams(slLp);
+        menuList.addView(sectionLabel);
 
-        themeList.addView(sectionTitle);
-
-        // 主题项列表（与主页卡片风格一致）
+        // 主题菜单项
         for (int i = 0; i < THEME_NAMES.length; i++) {
             final int themeIdx = i;
             final int[] colors = THEME_COLORS[i];
             final boolean isSelected = i == currentTheme;
 
-            LinearLayout themeItem = new LinearLayout(this);
-            themeItem.setOrientation(LinearLayout.HORIZONTAL);
-            themeItem.setGravity(Gravity.CENTER_VERTICAL);
-            GradientDrawable tiBg = new GradientDrawable();
-            tiBg.setColor(DS_CARD);
-            tiBg.setCornerRadius(dp(14));
-            tiBg.setStroke(dp(1), isSelected ? colors[0] : DS_BORDER);
-            themeItem.setBackground(tiBg);
-            themeItem.setPadding(dp(12), dp(12), dp(12), dp(12));
+            LinearLayout menuItem = new LinearLayout(this);
+            menuItem.setOrientation(LinearLayout.HORIZONTAL);
+            menuItem.setGravity(Gravity.CENTER_VERTICAL);
+            GradientDrawable miBg = new GradientDrawable();
+            miBg.setCornerRadius(dp(12));
+            if (isSelected) {
+                miBg.setColor(colors[3]);
+                miBg.setStroke(dp(2), colors[0]);
+            } else {
+                miBg.setColor(DS_CARD);
+            }
+            menuItem.setBackground(miBg);
+            menuItem.setPadding(dp(12), dp(12), dp(12), dp(12));
 
-            LinearLayout.LayoutParams tilp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams miLp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            tilp.bottomMargin = dp(8);
-            themeItem.setLayoutParams(tilp);
+            miLp.bottomMargin = dp(6);
+            menuItem.setLayoutParams(miLp);
 
-            // 左侧颜色图标
-            LinearLayout colorIcon = new LinearLayout(this);
-            colorIcon.setGravity(Gravity.CENTER);
-            GradientDrawable ciGd = new GradientDrawable(
+            // 左侧：主题图标
+            LinearLayout menuIcon = new LinearLayout(this);
+            menuIcon.setGravity(Gravity.CENTER);
+            GradientDrawable miGd = new GradientDrawable(
                     GradientDrawable.Orientation.TL_BR,
                     new int[]{colors[0], colors[4], colors[1]});
-            ciGd.setCornerRadius(dp(10));
-            colorIcon.setBackground(ciGd);
-            colorIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(40), dp(40)));
+            miGd.setCornerRadius(dp(10));
+            menuIcon.setBackground(miGd);
+            menuIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(36), dp(36)));
 
-            TextView ciText = new TextView(this);
-            ciText.setText(THEME_ICONS[i]);
-            ciText.setTextSize(16);
-            ciText.setTextColor(0xFFFFFFFF);
-            ciText.setGravity(Gravity.CENTER);
-            ciText.setTypeface(null, android.graphics.Typeface.BOLD);
-            colorIcon.addView(ciText);
-            themeItem.addView(colorIcon);
+            TextView miText = new TextView(this);
+            miText.setText(THEME_ICONS[i]);
+            miText.setTextSize(14);
+            miText.setTextColor(0xFFFFFFFF);
+            miText.setGravity(Gravity.CENTER);
+            miText.setTypeface(null, android.graphics.Typeface.BOLD);
+            menuIcon.addView(miText);
+            menuItem.addView(menuIcon);
 
-            // 中间文字区
-            LinearLayout textCol = new LinearLayout(this);
-            textCol.setOrientation(LinearLayout.VERTICAL);
-            LinearLayout.LayoutParams tclp2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            tclp2.leftMargin = dp(12);
-            textCol.setLayoutParams(tclp2);
+            // 中间：主题名称 + 描述
+            LinearLayout labelCol = new LinearLayout(this);
+            labelCol.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams lcLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            lcLp.leftMargin = dp(12);
+            labelCol.setLayoutParams(lcLp);
 
-            TextView nameTv = new TextView(this);
-            nameTv.setText(THEME_NAMES[i]);
-            nameTv.setTextSize(14);
-            nameTv.setTextColor(isSelected ? colors[0] : DS_TEXT);
-            nameTv.setTypeface(null, android.graphics.Typeface.BOLD);
-            textCol.addView(nameTv);
+            TextView labelTv = new TextView(this);
+            labelTv.setText(THEME_NAMES[i]);
+            labelTv.setTextSize(14);
+            labelTv.setTextColor(isSelected ? colors[0] : DS_TEXT);
+            labelTv.setTypeface(null, android.graphics.Typeface.BOLD);
+            labelCol.addView(labelTv);
 
-            TextView descTv = new TextView(this);
-            descTv.setText(THEME_DESC[i]);
-            descTv.setTextSize(11);
-            descTv.setTextColor(DS_TEXT_SECOND);
-            LinearLayout.LayoutParams dtLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            dtLp.topMargin = dp(2);
-            descTv.setLayoutParams(dtLp);
-            textCol.addView(descTv);
+            TextView subTv = new TextView(this);
+            subTv.setText(THEME_DESC[i]);
+            subTv.setTextSize(11);
+            subTv.setTextColor(DS_TEXT_SECOND);
+            LinearLayout.LayoutParams stvLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            stvLp.topMargin = dp(2);
+            subTv.setLayoutParams(stvLp);
+            labelCol.addView(subTv);
 
-            themeItem.addView(textCol);
+            menuItem.addView(labelCol);
 
-            // 右侧单选指示器
+            // 右侧：选中箭头
             if (isSelected) {
-                LinearLayout radioChecked = new LinearLayout(this);
-                radioChecked.setGravity(Gravity.CENTER);
-                GradientDrawable rcGd = new GradientDrawable();
-                rcGd.setShape(GradientDrawable.OVAL);
-                rcGd.setColor(colors[0]);
-                radioChecked.setBackground(rcGd);
-                radioChecked.setLayoutParams(new LinearLayout.LayoutParams(dp(22), dp(22)));
+                LinearLayout arrowBox = new LinearLayout(this);
+                arrowBox.setGravity(Gravity.CENTER);
+                GradientDrawable abGd = new GradientDrawable();
+                abGd.setShape(GradientDrawable.OVAL);
+                abGd.setColor(colors[0]);
+                arrowBox.setBackground(abGd);
+                arrowBox.setLayoutParams(new LinearLayout.LayoutParams(dp(24), dp(24)));
 
-                View innerDot = new View(this);
-                GradientDrawable idGd = new GradientDrawable();
-                idGd.setShape(GradientDrawable.OVAL);
-                idGd.setColor(0xFFFFFFFF);
-                innerDot.setBackground(idGd);
-                innerDot.setLayoutParams(new LinearLayout.LayoutParams(dp(8), dp(8)));
-                radioChecked.addView(innerDot);
-
-                themeItem.addView(radioChecked);
+                TextView checkMark = new TextView(this);
+                checkMark.setText("✓");
+                checkMark.setTextSize(13);
+                checkMark.setTextColor(0xFFFFFFFF);
+                checkMark.setGravity(Gravity.CENTER);
+                checkMark.setTypeface(null, android.graphics.Typeface.BOLD);
+                arrowBox.addView(checkMark);
+                menuItem.addView(arrowBox);
             } else {
-                View radioEmpty = new View(this);
-                GradientDrawable reGd = new GradientDrawable();
-                reGd.setShape(GradientDrawable.OVAL);
-                reGd.setStroke(dp(2), DS_BORDER);
-                radioEmpty.setBackground(reGd);
-                radioEmpty.setLayoutParams(new LinearLayout.LayoutParams(dp(22), dp(22)));
-                themeItem.addView(radioEmpty);
+                // 右侧箭头
+                TextView arrowTv = new TextView(this);
+                arrowTv.setText("›");
+                arrowTv.setTextSize(20);
+                arrowTv.setTextColor(DS_TEXT_MUTED);
+                arrowTv.setGravity(Gravity.CENTER);
+                arrowTv.setLayoutParams(new LinearLayout.LayoutParams(dp(24), dp(24)));
+                menuItem.addView(arrowTv);
             }
 
             // 点击事件
-            themeItem.setOnClickListener(v -> {
+            menuItem.setOnClickListener(v -> {
                 currentTheme = themeIdx;
                 saveThemePreference(themeIdx);
                 applyThemeColors();
@@ -416,39 +432,43 @@ public class MainActivity extends Activity {
                 Toast.makeText(this, "已切换到「" + THEME_NAMES[themeIdx] + "」", Toast.LENGTH_SHORT).show();
             });
 
-            themeList.addView(themeItem);
+            menuList.addView(menuItem);
         }
 
-        listScroll.addView(themeList);
-        content.addView(listScroll);
+        menuScroll.addView(menuList);
+        drawer.addView(menuScroll);
 
-        // ========== 底部操作区 ==========
-        LinearLayout bottomBar = new LinearLayout(this);
-        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
-        bottomBar.setGravity(Gravity.CENTER);
-        bottomBar.setPadding(dp(16), dp(12), dp(16), dp(16));
-        bottomBar.setBackgroundColor(DS_CARD_SOFT);
+        // ---------- 底部信息 ----------
+        LinearLayout footerInfo = new LinearLayout(this);
+        footerInfo.setOrientation(LinearLayout.VERTICAL);
+        footerInfo.setPadding(dp(20), dp(12), dp(20), dp(16));
+        footerInfo.setBackgroundColor(DS_CARD_SOFT);
 
-        View cancelBtn = buildButton("取消", DS_GRAY, v -> dialog.dismiss());
-        cancelBtn.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        bottomBar.addView(cancelBtn);
+        TextView footerHint = new TextView(this);
+        footerHint.setText("点击主题立即应用");
+        footerHint.setTextSize(11);
+        footerHint.setTextColor(DS_TEXT_MUTED);
+        footerHint.setGravity(Gravity.CENTER);
+        footerInfo.addView(footerHint);
 
-        View spacer = new View(this);
-        spacer.setLayoutParams(new LinearLayout.LayoutParams(dp(10), 1));
-        bottomBar.addView(spacer);
+        drawer.addView(footerInfo);
 
-        View confirmBtn = buildButton("确定", THEME_PRIMARY, v -> dialog.dismiss());
-        confirmBtn.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        bottomBar.addView(confirmBtn);
+        root.addView(drawer);
 
-        content.addView(bottomBar);
+        // ========== 右侧遮罩层 ==========
+        final View overlay = new View(this);
+        overlay.setBackgroundColor(0x80000000);
+        LinearLayout.LayoutParams overlayLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        overlay.setLayoutParams(overlayLp);
+        overlay.setOnClickListener(v -> dialog.dismiss());
+        root.addView(overlay);
 
-        dialog.setContentView(content);
+        dialog.setContentView(root);
         if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
             dialog.getWindow().setLayout(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT);
+                    ViewGroup.LayoutParams.MATCH_PARENT);
         }
         dialog.show();
     }
