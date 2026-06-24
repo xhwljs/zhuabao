@@ -242,6 +242,18 @@ public class MainActivity extends Activity {
         closeBtn.setBackground(closeBg);
         closeBtn.setLayoutParams(new LinearLayout.LayoutParams(dp(40), dp(40)));
         closeBtn.setOnClickListener(v -> dialog.dismiss());
+        closeBtn.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    v.setAlpha(0.7f);
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    v.setAlpha(1.0f);
+                    break;
+            }
+            return false;
+        });
 
         TextView closeX = new TextView(this);
         closeX.setText("✕");
@@ -512,6 +524,18 @@ public class MainActivity extends Activity {
                 renderFullUI();
                 Toast.makeText(this, "已切换到「" + THEME_NAMES[themeIdx] + "」", Toast.LENGTH_SHORT).show();
             });
+            themeItem.setOnTouchListener((v, event) -> {
+                switch (event.getAction()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        v.setAlpha(0.7f);
+                        break;
+                    case android.view.MotionEvent.ACTION_UP:
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        v.setAlpha(1.0f);
+                        break;
+                }
+                return false;
+            });
 
             menuContainer.addView(themeItem);
         }
@@ -722,6 +746,18 @@ public class MainActivity extends Activity {
         themeBtn.setBackground(tbGd);
         themeBtn.setPadding(dp(12), dp(6), dp(12), dp(6));
         themeBtn.setOnClickListener(v -> showThemeSelector());
+        themeBtn.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    v.setAlpha(0.7f);
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    v.setAlpha(1.0f);
+                    break;
+            }
+            return false;
+        });
 
         TextView themeTv = new TextView(this);
         themeTv.setText(THEME_NAME);
@@ -1222,6 +1258,18 @@ public class MainActivity extends Activity {
 
         card.addView(titleRow);
         card.setOnClickListener(v -> showLogDialog());
+        card.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    v.setAlpha(0.7f);
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    v.setAlpha(1.0f);
+                    break;
+            }
+            return false;
+        });
 
         // 最新日志预览区域
         final LinearLayout logPreviewContainer = new LinearLayout(this);
@@ -1474,6 +1522,18 @@ public class MainActivity extends Activity {
         copyBtn.setBackground(copyGd);
         copyBtn.setPadding(dp(14), dp(7), dp(14), dp(7));
         copyBtn.setOnClickListener(v -> copyLogsToClipboard());
+        copyBtn.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    v.setAlpha(0.7f);
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    v.setAlpha(1.0f);
+                    break;
+            }
+            return false;
+        });
 
         TextView copyTv = new TextView(this);
         copyTv.setText("复制全部");
